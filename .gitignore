@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# User config — NEVER commit
+.env
+*.env.local
+
+# Output (generated transcripts)
+transcripts/
+test-output*/
+*.srt
+*.txt
+!docs/**/*.md
+!README*
+
+# uv lock — intentionally not committed (cross-platform skill, let users resolve)
+uv.lock
+.python-version

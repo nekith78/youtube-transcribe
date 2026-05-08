@@ -1,0 +1,30 @@
+# Normalize line endings across Windows / macOS / Linux.
+# All text files get LF in repo. Working tree gets native on checkout.
+
+* text=auto eol=lf
+
+# Source code — always LF (cross-platform tooling expects LF)
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+
+# Windows-only — must be CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.mp3 binary
+*.mp4 binary
+*.wav binary
+*.m4a binary
