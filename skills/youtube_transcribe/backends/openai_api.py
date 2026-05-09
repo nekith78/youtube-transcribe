@@ -1,0 +1,83 @@
+"""OpenAI backend — Whisper API."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from skills.youtube_transcribe.backends.base import (
+    BackendError,
+    BackendNotConfigured,
+    TranscriptionResult,
+)
+from skills.youtube_transcribe.config import get_api_key
+from skills.youtube_transcribe.utils.output_writer import Segment
+
+
+def _build_client(api_key: str):
+    from openai import OpenAI
+    return OpenAI(api_key=api_key)
+
+
+@dataclass
+class OpenAIBackend:
+    name: str = field(default="openai", init=False)
+    supports_url: bool = field(default=False, init=False)
+    supports_local_file: bool = field(default=True, init=False)
+
+    model: str = "whisper-1"
+
+    def is_configured(self) -> tuple[bool, str | None]:
+        if not get_api_key("openai"):
+            return False, (
+                "OPENAI_API_KEY не задан. Получи на https://platform.openai.com/api-keys "
+                "и пропиши через `youtube-transcribe config set-key openai`."
+            )
+        return True, None
+
+    def transcribe(
+        self,
+        audio_or_url: str | Path,
+        *,
+        language: str = "auto",
+        **opts,
+    ) -> TranscriptionResult:
+        audio = Path(audio_or_url)
+        if not audio.exists():
+            raise BackendError(f"Audio file not found: {audio}")
+
+        key = get_api_key("openai")
+        if not key:
+            raise BackendNotConfigured("OPENAI_API_KEY missing.")
+
+        client = _build_client(key)
+        lang = None if language == "auto" else language
+
+        try:
+            with audio.open("rb") as f:
+                resp = client.audio.transcriptions.create(
+                    file=f,
+                    model=self.model,
+                    language=lang,
+                    response_format="verbose_json",
+                    timestamp_granularities=["segment"],
+                )
+        except Exception as e:
+            raise BackendError(f"OpenAI API ошибка: {e}") from e
+
+        segments_data = getattr(resp, "segments", None) or []
+        segments = [
+            Segment(
+                start=float(s.get("start", 0.0)) if isinstance(s, dict) else float(s.start),
+                end=float(s.get("end", 0.0)) if isinstance(s, dict) else float(s.end),
+                text=(s.get("text") if isinstance(s, dict) else s.text).strip(),
+            )
+            for s in segments_data
+        ]
+
+        return TranscriptionResult(
+            text=getattr(resp, "text", "").strip(),
+            segments=segments,
+            language_detected=getattr(resp, "language", None),
+            backend_name=self.name,
+            duration_seconds=float(getattr(resp, "duration", 0.0) or 0.0),
+        )
