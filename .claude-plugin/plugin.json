@@ -1,0 +1,16 @@
+{
+  "name": "youtube-transcribe",
+  "version": "0.1.0",
+  "description": "Transcribe YouTube videos and local media via 8 interchangeable backends with offline default.",
+  "author": {
+    "name": "youtube-transcribe contributors"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/nekith78/youtube-transcribe",
+  "skills": [
+    "skills/youtube_transcribe"
+  ],
+  "commands": [
+    "commands/transcribe.md"
+  ]
+}
