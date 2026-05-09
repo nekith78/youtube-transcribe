@@ -130,6 +130,8 @@ def download_audio(
     timeout_seconds: int = 600,
 ) -> Path:
     """Download audio from URL via yt-dlp. Returns path to the audio file."""
+    if shutil.which("yt-dlp") is None:
+        raise DownloadError("yt-dlp не найден в PATH. Установи через `uv sync` или `pip install yt-dlp`.")
     output_dir.mkdir(parents=True, exist_ok=True)
     template = str(output_dir / "audio_%(id)s.%(ext)s")
     cmd = build_ytdlp_command(
@@ -137,9 +139,6 @@ def download_audio(
         output_template=template,
         cookies_browser=cookies_browser,
     )
-
-    if shutil.which("yt-dlp") is None:
-        raise DownloadError("yt-dlp не найден в PATH. Установи через `uv sync` или `pip install yt-dlp`.")
 
     try:
         result = subprocess.run(
@@ -193,6 +192,7 @@ def _extract_flat(url: str) -> dict:
     """Тонкая обёртка над yt-dlp YoutubeDL.extract_info(extract_flat=True).
     Изолирована, чтобы тесты могли мокать её точечно через patch."""
     from yt_dlp import YoutubeDL  # импорт локальный — yt-dlp тяжёлый
+    from yt_dlp.utils import DownloadError as YtDlpDownloadError
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -200,8 +200,11 @@ def _extract_flat(url: str) -> dict:
         "skip_download": True,
         "geo_bypass": True,
     }
-    with YoutubeDL(opts) as ydl:
-        return ydl.extract_info(url, download=False)
+    try:
+        with YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=False)
+    except YtDlpDownloadError as e:
+        raise DownloadError(_diagnose_ytdlp_error(str(e))) from e
 
 
 def probe_input(url_or_path: str) -> tuple[Literal["video", "playlist", "local"], dict]:

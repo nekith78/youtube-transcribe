@@ -136,3 +136,27 @@ def test_expand_channel_or_playlist_handles_missing_metadata():
     assert entries[0].video_id == "v1"
     assert entries[0].duration_sec is None
     assert entries[0].upload_date is None
+
+
+def test_download_audio_raises_when_yt_dlp_not_in_path(tmp_path: Path):
+    """yt-dlp missing → DownloadError + no output dir created."""
+    target_dir = tmp_path / "out"  # does NOT exist
+    with patch("shutil.which", return_value=None):
+        with pytest.raises(DownloadError, match="не найден"):
+            from skills.youtube_transcribe.utils.downloader import download_audio
+            download_audio("https://youtu.be/abc", target_dir)
+    assert not target_dir.exists()  # debris check
+
+
+def test_extract_flat_wraps_yt_dlp_download_error():
+    """yt-dlp's own DownloadError must be re-raised as our DownloadError."""
+    from yt_dlp.utils import DownloadError as YtDlpDownloadError
+    import yt_dlp
+    fake_ydl_class = MagicMock()
+    fake_ctx = MagicMock()
+    fake_ctx.extract_info.side_effect = YtDlpDownloadError("HTTP 403")
+    fake_ydl_class.return_value.__enter__.return_value = fake_ctx
+    with patch.object(yt_dlp, "YoutubeDL", fake_ydl_class):
+        from skills.youtube_transcribe.utils.downloader import _extract_flat
+        with pytest.raises(DownloadError):
+            _extract_flat("https://youtu.be/blocked")
