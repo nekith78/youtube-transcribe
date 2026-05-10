@@ -3,7 +3,7 @@
 All notable changes to youtube-transcribe will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.2.0] — 2026-XX-XX
+## [0.2.0] — 2026-05-11
 
 ### Added
 - Visual mode (`--with-visuals`) — multimodal анализ видео через Gemini
