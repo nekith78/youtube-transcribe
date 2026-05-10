@@ -167,8 +167,43 @@ def resolve(
                 seen_video_ids.add(t.video_id)
             targets.append(t)
 
-    # In v0.1 the only filter applied is `limit` (handled per-source in expand_*).
-    # Reserved fields `since/until/min_duration/max_duration/include_shorts`
-    # are placeholders for v0.3 — see spec extension §5 / §9.
+    # v0.3: apply post-resolution filters (since/until/duration/shorts).
+    # `limit` is handled per-source in expand_* (yt-dlp playlistend); the
+    # filters below run on already-probed metadata and are best-effort:
+    # if a target has no upload_date / duration_sec, those filters skip it.
+    targets = _apply_filters(targets, filters)
 
     return targets, failures
+
+
+def _apply_filters(
+    targets: list[ResolvedTarget],
+    filters: ResolverFilters,
+) -> list[ResolvedTarget]:
+    """Drop targets that fail since/until/duration/shorts filters.
+
+    Targets with missing metadata (e.g. local files have no upload_date)
+    pass all date/duration checks — the filters only exclude when we
+    have positive evidence of mismatch.
+    """
+    out: list[ResolvedTarget] = []
+    for t in targets:
+        if filters.since is not None and t.upload_date is not None:
+            if t.upload_date < filters.since:
+                continue
+        if filters.until is not None and t.upload_date is not None:
+            if t.upload_date > filters.until:
+                continue
+        if filters.min_duration_sec is not None and t.duration_sec is not None:
+            if t.duration_sec < filters.min_duration_sec:
+                continue
+        if filters.max_duration_sec is not None and t.duration_sec is not None:
+            if t.duration_sec > filters.max_duration_sec:
+                continue
+        # YouTube Shorts: vertical short-form videos, typically <= 60s.
+        # We use a duration heuristic — yt-dlp doesn't expose a "is_short" flag.
+        if not filters.include_shorts and t.duration_sec is not None:
+            if t.duration_sec <= 60:
+                continue
+        out.append(t)
+    return out

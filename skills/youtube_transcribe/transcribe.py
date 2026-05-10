@@ -473,6 +473,17 @@ def _infer_source_type(targets: list[ResolvedTarget], from_file: Path | None) ->
               help="External triggers TOML.")
 @click.option("--no-default-triggers", is_flag=True, default=False,
               help="Disable built-in triggers.")
+# === v0.3 channel filters ===
+@click.option("--since", "since_opt", default=None,
+              help="Filter videos uploaded on or after YYYY-MM-DD.")
+@click.option("--until", "until_opt", default=None,
+              help="Filter videos uploaded on or before YYYY-MM-DD.")
+@click.option("--min-duration", "min_duration_opt", type=int, default=None,
+              help="Minimum video duration in seconds.")
+@click.option("--max-duration", "max_duration_opt", type=int, default=None,
+              help="Maximum video duration in seconds.")
+@click.option("--no-shorts", "no_shorts_opt", is_flag=True, default=False,
+              help="Skip YouTube Shorts (videos <= 60s).")
 def batch_cmd(
     inputs: tuple[str, ...],
     from_file: Path | None,
@@ -530,7 +541,29 @@ def batch_cmd(
     for msg in info_msgs:
         console.print(msg, style="dim")
 
-    targets, resolve_failures = resolve(list(inputs), from_file, ResolverFilters(limit=limit))
+    # === v0.3 channel filters ===
+    from datetime import date as _date_cls
+
+    def _parse_date(s: str | None, flag_name: str):
+        if s is None:
+            return None
+        try:
+            return _date_cls.fromisoformat(s)
+        except ValueError:
+            console.print(
+                f"[red]--{flag_name} expects YYYY-MM-DD format, got '{s}'[/red]"
+            )
+            sys.exit(2)
+
+    filters = ResolverFilters(
+        limit=limit,
+        since=_parse_date(opts.get("since_opt"), "since"),
+        until=_parse_date(opts.get("until_opt"), "until"),
+        min_duration_sec=opts.get("min_duration_opt"),
+        max_duration_sec=opts.get("max_duration_opt"),
+        include_shorts=not opts.get("no_shorts_opt", False),
+    )
+    targets, resolve_failures = resolve(list(inputs), from_file, filters)
 
     # Convert resolve failures into BatchFailure entries (stage="resolve")
     initial_failures: list[BatchFailure] = []
