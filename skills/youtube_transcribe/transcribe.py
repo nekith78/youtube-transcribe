@@ -136,8 +136,9 @@ def cli() -> None:
 @click.option("--correct-asr", "correct_asr_opt", is_flag=True, default=None,
               help="Run LLM-based correction on low-quality transcripts (opt-in).")
 @click.option("--correct-asr-backend", "correct_asr_backend_opt",
-              type=click.Choice(["gemini", "claude", "openai"]), default=None,
-              help="LLM provider for ASR correction (default: gemini).")
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]), default=None,
+              help="LLM provider for ASR correction (default: gemini; "
+                   "ollama=local llama via `ollama serve`).")
 def transcribe_cmd(audio_or_url: str, **opts) -> None:
     """Transcribe a YouTube URL, supported video URL, or local audio/video file."""
     if not CONFIG_PATH.exists():
@@ -507,8 +508,9 @@ def _infer_source_type(targets: list[ResolvedTarget], from_file: Path | None) ->
 @click.option("--correct-asr", "correct_asr_opt", is_flag=True, default=None,
               help="Run LLM-based correction on low-quality transcripts (opt-in).")
 @click.option("--correct-asr-backend", "correct_asr_backend_opt",
-              type=click.Choice(["gemini", "claude", "openai"]), default=None,
-              help="LLM provider for ASR correction (default: gemini).")
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]), default=None,
+              help="LLM provider for ASR correction (default: gemini; "
+                   "ollama=local llama via `ollama serve`).")
 def batch_cmd(
     inputs: tuple[str, ...],
     from_file: Path | None,

@@ -77,12 +77,18 @@ def correct_transcript_via_llm(
     segments: list[Segment],
     language: str,
     *,
-    api_key: str,
+    api_key: str | None,
     backend: str = "gemini",
+    ollama_model: str = "llama3.2:3b",
+    ollama_host: str = "http://localhost:11434",
 ) -> list[Segment]:
     """Run a single LLM call to fix obvious ASR errors. Best-effort.
 
-    backend: "gemini" | "claude" | "openai". Default "gemini" (cheap, fast).
+    backend:
+      - "gemini" | "claude" | "openai" — cloud (cheap text-only model)
+      - "ollama" — local model via http://localhost:11434 (default).
+        api_key ignored for Ollama. Default model llama3.2:3b is small (~2GB).
+
     Returns the corrected segments. On any failure (no API, parse error,
     wrong length), returns the original segments unchanged.
     """
@@ -96,11 +102,13 @@ def correct_transcript_via_llm(
 
     try:
         if backend == "gemini":
-            text = _call_gemini(prompt, api_key)
+            text = _call_gemini(prompt, api_key or "")
         elif backend == "claude":
-            text = _call_claude(prompt, api_key)
+            text = _call_claude(prompt, api_key or "")
         elif backend == "openai":
-            text = _call_openai(prompt, api_key)
+            text = _call_openai(prompt, api_key or "")
+        elif backend == "ollama":
+            text = _call_ollama(prompt, model=ollama_model, host=ollama_host)
         else:
             return segments
     except Exception:
@@ -139,3 +147,31 @@ def _call_openai(prompt: str, api_key: str) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     return (resp.choices[0].message.content or "") if resp.choices else ""
+
+
+def _call_ollama(
+    prompt: str,
+    *,
+    model: str = "llama3.2:3b",
+    host: str = "http://localhost:11434",
+) -> str:
+    """POST to local Ollama daemon. Requires `ollama serve` running.
+
+    No API key, no network call to cloud. Models live in ~/.ollama/models.
+    """
+    import urllib.request
+    payload = json.dumps({
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json",  # ask Ollama to coerce to valid JSON
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{host.rstrip('/')}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        body = json.loads(r.read())
+    return body.get("response", "")

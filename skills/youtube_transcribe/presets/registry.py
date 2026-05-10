@@ -107,11 +107,24 @@ REGISTRY: list[OptionField] = [
     ),
     OptionField(
         key="correct_asr_backend", type=str, default="gemini",
-        choices=["gemini", "claude", "openai"],
+        choices=["gemini", "claude", "openai", "ollama"],
         description=(
-            "LLM provider for ASR correction. Defaults to gemini-2.5-flash; "
-            "claude uses haiku-4-5; openai uses gpt-4o-mini."
+            "LLM provider for ASR correction. gemini=2.5-flash; "
+            "claude=haiku-4-5; openai=gpt-4o-mini; ollama=local llama3.2:3b "
+            "(requires `ollama serve` running)."
         ),
+        section="smart",
+    ),
+    OptionField(
+        key="ollama_model", type=str, default="llama3.2:3b",
+        choices=None,
+        description="Ollama model tag (default llama3.2:3b, ~2 GB).",
+        section="smart",
+    ),
+    OptionField(
+        key="ollama_host", type=str, default="http://localhost:11434",
+        choices=None,
+        description="Ollama HTTP host. Default = local daemon.",
         section="smart",
     ),
 ]

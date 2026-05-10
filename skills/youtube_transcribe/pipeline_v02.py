@@ -125,24 +125,32 @@ def apply_v02_stages(
                 correct_transcript_via_llm,
             )
             corrector_backend = cfg.get("correct_asr_backend", "gemini")
-            corrector_key = {
-                "gemini": "gemini",
-                "claude": "anthropic",
-                "openai": "openai",
-            }.get(corrector_backend)
-            corrector_api_key = (
-                _config_mod.get_api_key(corrector_key) if corrector_key else None
-            )
-            if corrector_api_key:
+            # Ollama is local-only; cloud backends need an API key.
+            if corrector_backend == "ollama":
+                corrector_api_key = None  # not needed
+                can_run = True
+            else:
+                corrector_key = {
+                    "gemini": "gemini",
+                    "claude": "anthropic",
+                    "openai": "openai",
+                }.get(corrector_backend)
+                corrector_api_key = (
+                    _config_mod.get_api_key(corrector_key) if corrector_key else None
+                )
+                can_run = corrector_api_key is not None
+
+            if can_run:
                 corrected = correct_transcript_via_llm(
                     result.segments,
                     result.language_detected or "en",
                     api_key=corrector_api_key,
                     backend=corrector_backend,
+                    ollama_model=cfg.get("ollama_model", "llama3.2:3b"),
+                    ollama_host=cfg.get("ollama_host", "http://localhost:11434"),
                 )
                 if corrected is not result.segments:
                     result.segments = corrected
-                    # Reflect that text was post-processed in the quality breakdown
                     new_breakdown = dict(report.breakdown)
                     new_breakdown["asr_corrected"] = corrector_backend
                     object.__setattr__(report, "breakdown", new_breakdown)
