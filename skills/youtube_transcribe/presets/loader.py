@@ -99,6 +99,7 @@ def resolve_with_env_checks(
     _VISION_KEY_MAP = {
         "gemini": ("gemini", "GEMINI_API_KEY"),
         "claude": ("anthropic", "ANTHROPIC_API_KEY"),
+        "openai": ("openai", "OPENAI_API_KEY"),
     }
     if vb in _VISION_KEY_MAP:
         backend_key, env_var = _VISION_KEY_MAP[vb]

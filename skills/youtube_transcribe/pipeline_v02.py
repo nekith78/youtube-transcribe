@@ -117,9 +117,13 @@ def apply_v02_stages(
 
     # === Visual detection + annotation ===
     vision_backend_name = cfg.get("vision_backend", "off")
-    if vision_backend_name in ("gemini", "claude") and video_path is not None:
+    if vision_backend_name in ("gemini", "claude", "openai") and video_path is not None:
         # Each multimodal backend uses its own API key.
-        api_key_lookup = {"gemini": "gemini", "claude": "anthropic"}[vision_backend_name]
+        api_key_lookup = {
+            "gemini": "gemini",
+            "claude": "anthropic",
+            "openai": "openai",
+        }[vision_backend_name]
         api_key = _config_mod.get_api_key(api_key_lookup)
         if not api_key:
             return result
@@ -147,19 +151,19 @@ def apply_v02_stages(
         )
 
         if windows:
+            fpw = cfg.get("frames_per_window", 3)
             if vision_backend_name == "claude":
                 from skills.youtube_transcribe.vision.claude_vision import (
                     ClaudeVisionBackend,
                 )
-                backend = ClaudeVisionBackend(
-                    api_key=api_key,
-                    frames_per_window=cfg.get("frames_per_window", 3),
+                backend = ClaudeVisionBackend(api_key=api_key, frames_per_window=fpw)
+            elif vision_backend_name == "openai":
+                from skills.youtube_transcribe.vision.openai_vision import (
+                    OpenAIVisionBackend,
                 )
+                backend = OpenAIVisionBackend(api_key=api_key, frames_per_window=fpw)
             else:  # gemini
-                backend = GeminiVisionBackend(
-                    api_key=api_key,
-                    frames_per_window=cfg.get("frames_per_window", 3),
-                )
+                backend = GeminiVisionBackend(api_key=api_key, frames_per_window=fpw)
             visuals = backend.annotate_segments(
                 video_path=video_path,
                 windows=windows,

@@ -41,11 +41,12 @@ REGISTRY: list[OptionField] = [
     # === vision ===
     OptionField(
         key="vision_backend", type=str, default="off",
-        choices=["off", "gemini", "claude"],
+        choices=["off", "gemini", "claude", "openai"],
         description=(
             "Visual mode. off = audio only. "
             "gemini = multimodal (video+frames via File API). "
-            "claude = images-only (keyframes via ffmpeg)."
+            "claude = images-only (keyframes via ffmpeg). "
+            "openai = GPT-4o vision (keyframes via ffmpeg)."
         ),
         section="vision",
     ),
