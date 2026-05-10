@@ -254,7 +254,7 @@ def write_manifest_json(
 
     out: list[dict] = []
     for v in videos:
-        out.append({
+        entry = {
             "index": v.index,
             "url": v.url,
             "video_id": v.video_id,
@@ -266,7 +266,29 @@ def write_manifest_json(
             "files": v.files,
             "status": v.status,
             "error": v.error,
-        })
+        }
+        # === v0.2 ===
+        if v.quality is not None:
+            entry["quality"] = {
+                "score": v.quality.score,
+                "breakdown": v.quality.breakdown,
+                "flags": v.quality.flags,
+                "recommendation": v.quality.recommendation,
+            }
+        if v.visual_segments:
+            entry["visual_segments"] = [
+                {
+                    "start": vs.start,
+                    "end": vs.end,
+                    "description": vs.description,
+                    "keyframes": vs.keyframes,
+                    "detected_objects": vs.detected_objects,
+                    "trigger_reason": vs.trigger_reason,
+                    "importance": vs.importance,
+                }
+                for vs in v.visual_segments
+            ]
+        out.append(entry)
     for f in failures:
         out.append({
             "index": f.index,
