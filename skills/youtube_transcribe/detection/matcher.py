@@ -166,3 +166,51 @@ def _match_universal(text: str, cfg: TriggerConfig) -> tuple[str, float, float] 
         return None
     phrase = phrases[best_idx]
     return phrase, best_score, cfg.universal[phrase]
+
+
+# === Top-level match_segment composer ===
+
+
+def _detect_lang(text: str) -> str:
+    """langdetect with fallback. Returns 2-letter ISO code or 'en' if uncertain."""
+    try:
+        from langdetect import detect
+        return detect(text)
+    except Exception:
+        return "en"
+
+
+def match_segment(text: str, cfg: TriggerConfig) -> TriggerMatch | None:
+    """Run all matchers in priority order. Returns first match or None.
+
+    Priority:
+      1. raw (any lang, exact)
+      2. languages.<seg_lang>.strict (per-lang exact)
+      3. languages.<seg_lang>.soft (per-lang lemmatized)
+      4. universal (cross-lingual embeddings)
+    """
+    seg_lang = _detect_lang(text)
+
+    raw_auto = _build_raw_automaton(cfg)
+    hit = _match_aho(text, raw_auto)
+    if hit:
+        phrase, weight = hit
+        return TriggerMatch(score=1.0, weight=weight, reason="raw", phrase=phrase)
+
+    strict_auto = _build_strict_automaton(cfg, seg_lang)
+    hit = _match_aho(text, strict_auto)
+    if hit:
+        phrase, weight = hit
+        return TriggerMatch(score=1.0, weight=weight, reason=f"strict:{seg_lang}", phrase=phrase)
+
+    soft_hit = _match_soft(text, cfg, seg_lang)
+    if soft_hit:
+        phrase, weight = soft_hit
+        return TriggerMatch(score=0.9, weight=weight, reason=f"soft:{seg_lang}", phrase=phrase)
+
+    uni_hit = _match_universal(text, cfg)
+    if uni_hit:
+        phrase, score, weight = uni_hit
+        return TriggerMatch(score=score, weight=weight, reason="universal", phrase=phrase)
+
+    return None
