@@ -340,6 +340,13 @@ default_language = "en"
 universal_match_method = "semantic"
 universal_match_threshold = 0.65   # cosine similarity 0..1
 
+# === ФОРМАТ ФРАЗ ===
+# Каждая фраза в любой секции хранится одним из двух способов:
+#   "look here"           — обычная строка, вес = 1.0 (по умолчанию)
+#   ["function", 1.5]     — массив [фраза, вес], вес ≠ 1.0
+# Веса учитываются при сортировке окон при превышении max_windows_per_video,
+# не меняют отображаемый score (он остаётся 0..1).
+
 # === УНИВЕРСАЛЬНЫЕ ТРИГГЕРЫ ===
 # Срабатывают на ЛЮБОМ языке видео через cross-lingual embeddings.
 [triggers.universal]
@@ -354,23 +361,16 @@ phrases = [
   "result",
   "diagram",
   "notice this",
+  ["function", 1.5],          # код — приоритетнее обычных пояснений
+  ["class", 1.5],
+  ["method", 1.5],
 ]
-
-# === КАТЕГОРИИ ===
-# Группировка + boost score.
-[triggers.categories.code]
-phrases = ["function", "class", "method", "variable", "API", "endpoint"]
-boost = 1.5
-
-[triggers.categories.demo]
-phrases = ["see this", "this is how", "result", "demo"]
-boost = 1.3
 
 # === PER-LANGUAGE OVERRIDES (опционально) ===
 # Активны только когда detect_language(segment) == ключ.
 [triggers.languages.ru]
 soft   = ["смотри сюда", "обрати внимание", "вот этот код", "посмотрите сюда"]
-strict = ["баг", "PR", "merge conflict", "коммит", "пайплайн"]
+strict = ["баг", ["PR", 2.0], "merge conflict", ["коммит", 1.3], "пайплайн"]
 
 [triggers.languages.es]
 soft   = ["mira aquí", "presta atención"]
@@ -386,57 +386,101 @@ phrases = [
   "this is fine",
   "feature not a bug",
   "deadline",
-  "TODO",
+  ["TODO", 2.0],
   "FIXME",
 ]
 ```
 
 ### Алгоритм matching
 
+**Парсинг записей фраз:**
+
+```python
+def parse_phrase_entry(entry) -> tuple[str, float]:
+    """Возвращает (phrase, weight). Дефолт weight = 1.0."""
+    if isinstance(entry, str):
+        return entry, 1.0
+    if isinstance(entry, list) and len(entry) == 2:
+        phrase, weight = entry
+        if not isinstance(phrase, str) or not isinstance(weight, (int, float)):
+            raise ValueError(f"Invalid phrase entry: {entry}")
+        return phrase, float(weight)
+    raise ValueError(f"Phrase must be 'string' or ['string', number]: {entry}")
+```
+
 **Один раз на старте сессии (`load_triggers()`):**
 1. Загрузить built-in default + user override (deep merge, user может выставить `mode = "replace"` для полной замены).
-2. Для `triggers.universal.phrases` и каждой `triggers.categories.*` посчитать embeddings через `paraphrase-multilingual-MiniLM-L12-v2`. Кэш в `~/.cache/youtube-transcribe/embeddings/<sha256(phrases_json)>.npy`.
-3. Скомпилить Aho-Corasick automata: один для `raw`, по одному на каждый `languages.<lang>.strict`.
-4. Загрузить lemmatizers для языков, у которых задан `soft`: `lemminflect` для en, `pymorphy3` для ru, spaCy multilingual model для остальных. Lazy import — только если соответствующая секция в TOML непустая.
+2. Распарсить все секции через `parse_phrase_entry`. Получаем `dict[phrase, weight]` для каждой секции.
+3. Для `triggers.universal` посчитать embeddings через `paraphrase-multilingual-MiniLM-L12-v2`. Кэш в `~/.cache/youtube-transcribe/embeddings/<sha256(phrases_json)>.npy`.
+4. Скомпилить Aho-Corasick automata: один для `raw`, по одному на каждый `languages.<lang>.strict`.
+5. Загрузить lemmatizers для языков, у которых задан `soft`: `lemminflect` для en, `pymorphy3` для ru, spaCy multilingual model для остальных. Lazy import — только если соответствующая секция в TOML непустая.
 
 **Per-segment в `Detector.find_windows()`:**
 
 ```python
-def match_segment(segment: Segment) -> tuple[float, str] | None:
-    """Возвращает (score, reason) или None если триггер не сработал."""
+@dataclass
+class TriggerMatch:
+    score: float           # base 0..1
+    weight: float          # из TOML, default 1.0
+    reason: str            # "raw" | "strict:ru" | "soft:ru" | "universal"
+    phrase: str            # какая фраза сработала
+
+def match_segment(segment: Segment) -> TriggerMatch | None:
     seg_lang = langdetect.detect(segment.text)
     text_lower = segment.text.lower()
     text_lemmas = lemmatize(text_lower, seg_lang) if has_lemmatizer(seg_lang) else None
 
     # 1. raw — Aho-Corasick точное совпадение
-    if raw_automaton.search(text_lower):
-        return (1.0, "raw")
+    hit = raw_automaton.find(text_lower)
+    if hit:
+        return TriggerMatch(1.0, raw_weights[hit], "raw", hit)
 
     # 2. languages.<seg_lang>.strict — Aho-Corasick точное совпадение
     if seg_lang in lang_strict_automatons:
-        if lang_strict_automatons[seg_lang].search(text_lower):
-            return (1.0, f"strict:{seg_lang}")
+        hit = lang_strict_automatons[seg_lang].find(text_lower)
+        if hit:
+            return TriggerMatch(1.0, lang_strict_weights[seg_lang][hit], f"strict:{seg_lang}", hit)
 
     # 3. languages.<seg_lang>.soft — substring по леммам
     if text_lemmas and seg_lang in lang_soft_lemmas:
-        for lemma_phrase in lang_soft_lemmas[seg_lang]:
+        for lemma_phrase, weight in lang_soft_lemmas[seg_lang].items():
             if lemma_phrase in text_lemmas:
-                return (0.9, f"soft:{seg_lang}")
+                return TriggerMatch(0.9, weight, f"soft:{seg_lang}", lemma_phrase)
 
     # 4. universal — cosine similarity через multilingual embeddings
-    seg_emb = encoder.encode(segment.text)  # 384-dim float
-    universal_sims = cosine(seg_emb, universal_embeddings)  # vec
-    if universal_sims.max() >= threshold:
-        return (universal_sims.max(), "universal")
-
-    # 5. categories — то же что universal но с boost
-    for cat_name, (cat_emb, boost) in category_embeddings.items():
-        cat_sim = cosine(seg_emb, cat_emb).max()
-        boosted = min(cat_sim * boost, 1.0)
-        if boosted >= threshold:
-            return (boosted, f"category:{cat_name}")
+    seg_emb = encoder.encode(segment.text)
+    sims = cosine(seg_emb, universal_embeddings)  # vec [N]
+    best_idx = sims.argmax()
+    if sims[best_idx] >= threshold:
+        phrase = universal_phrases[best_idx]
+        return TriggerMatch(float(sims[best_idx]), universal_weights[phrase], "universal", phrase)
 
     return None
+```
+
+**Применение веса при выборе окон:**
+
+```python
+def select_windows(matches: list[TriggerMatch], max_windows: int, video_duration: float) -> list[DetectionWindow]:
+    """Если matches помещаются в бюджет — берём все. Иначе — равномерно распределяем
+    по таймкоду, в каждой временной корзине берём окно с максимальным score*weight."""
+    if len(matches) <= max_windows:
+        return [m.to_window() for m in matches]
+
+    # Делим видео на max_windows корзин по времени
+    bucket_size = video_duration / max_windows
+    buckets: list[list[TriggerMatch]] = [[] for _ in range(max_windows)]
+    for m in matches:
+        idx = min(int(m.start / bucket_size), max_windows - 1)
+        buckets[idx].append(m)
+
+    # В каждой корзине — лучший по score*weight
+    selected = []
+    for bucket in buckets:
+        if bucket:
+            best = max(bucket, key=lambda m: m.score * m.weight)
+            selected.append(best.to_window())
+    return selected
 ```
 
 ### Боюсь ли производительности
@@ -445,10 +489,10 @@ def match_segment(segment: Segment) -> tuple[float, str] | None:
 
 ### Built-in default `triggers_default.toml`
 
-≈25 универсальных EN-фраз + 8 в `categories.code` + 6 в `categories.demo`. Примеры:
-- universal: "look here", "pay attention", "this is important", "see this code", "for example", "step by step", "demonstrate", "result", "diagram", "notice this", "key point", "remember this", "important note", "watch closely", "the trick is", "the catch is", "this part", "see the difference", "this is how", "let me show you", "right here", "as you can see", "the result is", "compare these", "before and after"
-- categories.code: "function", "class", "method", "variable", "API", "endpoint", "import", "config"
-- categories.demo: "see this", "this is how", "result", "demo", "example", "live"
+≈25 EN-фраз в `triggers.universal`. Примеры:
+- "look here", "pay attention", "this is important", "see this code", "for example", "step by step", "demonstrate", "result", "diagram", "notice this", "key point", "remember this", "important note", "watch closely", "the trick is", "the catch is", "this part", "see the difference", "this is how", "let me show you", "right here", "as you can see", "the result is", "compare these", "before and after"
+
+Дефолтных весов на этапе built-in не задаём — все 1.0. Пользователь сам поднимает вес важных фраз через `triggers weight set` или ручную правку.
 
 User может расширять/переопределять без правки built-in.
 
@@ -596,7 +640,7 @@ Hello and welcome to today's tutorial...
 The video shows VS Code with `anthropic.messages.create(...)` call being typed.
 Visible imports: `from anthropic import Anthropic`.
 
-Trigger: `category:code` (cosine 0.78)
+Trigger: `universal:function` (cosine 0.78, weight 1.5)
 
 #### 00:01:52 — Diagram of agent loop (importance: high)
 
@@ -916,9 +960,21 @@ youtube-transcribe triggers add --soft --lang ru "смотри сюда; вот 
 youtube-transcribe triggers add --strict --lang ru "баг; PR; коммит"
   В [triggers.languages.ru].strict. Точное совпадение в указанном языке.
 
-youtube-transcribe triggers add --category code "function; class; method"
-  В [triggers.categories.code].phrases. Боост по умолчанию 1.5
-  (можно задать --boost 2.0 при создании новой категории).
+youtube-transcribe triggers weight set --universal "function" 1.5
+youtube-transcribe triggers weight set --raw "TODO" 2.0
+youtube-transcribe triggers weight set --strict --lang ru "PR" 2.0
+  Поднимает (или опускает) вес фразы. Запись в TOML
+  превращается из "function" в ["function", 1.5]. Дефолт = 1.0.
+  Применяется при сортировке окон при превышении max_windows_per_video.
+
+youtube-transcribe triggers weight set --universal "function:1.5; class:1.5; method:1.5"
+  Батч — формат фраза:вес через ;. Удобно вешать веса сразу группе.
+
+youtube-transcribe triggers weight unset --universal "function"
+  Сбрасывает вес обратно к 1.0 — запись становится обычной строкой.
+
+youtube-transcribe triggers weight list
+  Печатает только non-default веса (всё что в []-форме).
 
 youtube-transcribe triggers list [--section <name>]
   Печатает все секции и фразы в форматированной таблице (Rich).
