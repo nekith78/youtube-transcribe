@@ -187,7 +187,40 @@ youtube-transcribe batch https://youtube.com/playlist?list=PLxxx --limit 5 \
 
 Claude запустит `batch --limit 10 --backend subtitles`, прочитает `combined.md` и напишет сводку. Skill сам по себе summary **не делает** — это задача Claude в чате после того, как `combined.md` готов.
 
-> **Что НЕ делает batch в v0.1:** поиск по тегам/теме — v0.3; Instagram — v0.4; параллельный прогон — v0.3. См. roadmap.
+### Batch power-flags (v0.3)
+
+```bash
+# Channel filters — оставить видео по дате и длительности
+youtube-transcribe batch https://youtube.com/@anthropicai \
+    --since 2026-01-01 --until 2026-12-31 \
+    --min-duration 300 --max-duration 3600 \
+    --no-shorts --limit 20
+
+# Inkremental re-fetch: пропустить уже транскрибированные видео
+youtube-transcribe batch https://youtube.com/@anthropicai --skip-existing --limit 50
+
+# Парallel прогон 4 видео одновременно (полезно для облачных бэкендов
+# с большим RPM-бюджетом; whisper-local не выиграет — упирается в CPU/GPU)
+youtube-transcribe batch <playlist> --workers 4 --backend gemini
+
+# Поиск по теме на YouTube — без API ключа
+youtube-transcribe batch --search "claude code tutorial" --limit 10
+
+# Комбинация: поиск + фильтры + параллелизм
+youtube-transcribe batch --search "transformer architecture" \
+    --since 2025-01-01 --no-shorts --min-duration 600 \
+    --limit 20 --workers 4 --backend gemini --with-visuals
+```
+
+| Флаг | Что делает |
+|---|---|
+| `--since YYYY-MM-DD` | Только видео загруженные с этой даты |
+| `--until YYYY-MM-DD` | Только видео до этой даты |
+| `--min-duration N` / `--max-duration N` | По длительности в секундах |
+| `--no-shorts` | Пропускать Shorts (≤60s) |
+| `--skip-existing` | Не перетранскрибировать видео если `_<video_id>.txt` уже есть в `output-dir` |
+| `--workers N` | Параллельная обработка N видео; несовместимо с `--fail-fast` |
+| `--search "query"` | YouTube-поиск через yt-dlp (без API ключа) |
 
 ---
 

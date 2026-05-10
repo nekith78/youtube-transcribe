@@ -3,6 +3,27 @@
 All notable changes to youtube-transcribe will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] — 2026-05-11
+
+### Added
+
+- **Russian perplexity support.** `quality/perplexity.py` `_LANG_MODELS` now
+  maps `ru` → `sberbank-ai/rugpt3small_based_on_gpt2` (~550 MB lazy
+  download). Calibration constants (50 baseline / 150 divisor) shared
+  with English — may need per-language tuning on real data.
+- **README v0.3 documentation.** New `Batch power-flags (v0.3)` section
+  with examples for `--since/--until/--min-duration/--max-duration/--no-shorts`,
+  `--skip-existing`, `--workers N`, `--search "query"`, plus a flag
+  reference table.
+
+### Fixed
+
+- `test_version_bumped` was hard-coded to `0.2.` prefix — fails on
+  every minor bump. Now uses `int(major) >= 0 and int(minor) >= 2`.
+
+### Tests
+- 437 unit tests green (was 434 in v0.3.0; +3 Russian-perplexity tests).
+
 ## [0.3.0] — 2026-05-11
 
 Major batch features.

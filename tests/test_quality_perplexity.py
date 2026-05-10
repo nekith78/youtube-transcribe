@@ -142,3 +142,54 @@ def test_lang_models_includes_english():
     """English must be supported (default model is gpt2)."""
     assert "en" in _LANG_MODELS
     assert _LANG_MODELS["en"] == "gpt2"
+
+
+def test_lang_models_includes_russian():
+    """Russian must be supported via rugpt3small."""
+    assert "ru" in _LANG_MODELS
+    assert "rugpt3" in _LANG_MODELS["ru"]
+
+
+def test_russian_supported_via_helper(monkeypatch):
+    """is_perplexity_available_for_lang('ru') → True when transformers importable."""
+    assert is_perplexity_available_for_lang("ru") is True
+
+
+def test_russian_perplexity_uses_correct_model(monkeypatch):
+    """When lang='ru', _get_lm must resolve to the Russian model."""
+    captured_model = []
+
+    class FakeTok:
+        @classmethod
+        def from_pretrained(cls, name):
+            captured_model.append(("tok", name))
+            return cls()
+
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, name):
+            captured_model.append(("model", name))
+            m = cls()
+            m.eval = lambda: None
+            return m
+
+    monkeypatch.setattr(
+        "skills.youtube_transcribe.quality.perplexity.AutoTokenizer",
+        FakeTok,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "skills.youtube_transcribe.quality.perplexity.AutoModelForCausalLM",
+        FakeModel,
+        raising=False,
+    )
+    # Patch the import-site dynamic lookup
+    import transformers
+    monkeypatch.setattr(transformers, "AutoTokenizer", FakeTok)
+    monkeypatch.setattr(transformers, "AutoModelForCausalLM", FakeModel)
+    perplexity._get_lm.cache_clear()
+
+    result = perplexity._get_lm("ru")
+    assert result is not None
+    names = [x[1] for x in captured_model]
+    assert any("rugpt3" in n for n in names), f"expected rugpt3 in {names}"

@@ -18,7 +18,8 @@ from functools import lru_cache
 from skills.youtube_transcribe.utils.output_writer import Segment
 
 _LANG_MODELS: dict[str, str] = {
-    "en": "gpt2",
+    "en": "gpt2",                                          # ~500 MB
+    "ru": "sberbank-ai/rugpt3small_based_on_gpt2",         # ~550 MB
     # Add more entries when models are proven to work cross-platform without
     # heavy GPU. (mGPT/XGLM are 1.4 GB+ — too big for opt-in default.)
 }
