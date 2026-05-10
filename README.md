@@ -97,6 +97,55 @@ Output goes to `./transcripts/` — one `.txt` (plain text with timestamps) and 
 
 ---
 
+## Visual mode (v0.2)
+
+Включи `--with-visuals` чтобы получить не только транскрипт, но и описание
+визуальных моментов с встроенными скриншотами в `combined.md`. Полезно для
+видео-туториалов: получаешь markdown-инструкцию с картинками.
+
+```bash
+youtube-transcribe https://youtube.com/watch?v=... --with-visuals
+```
+
+Требуется `GEMINI_API_KEY` (free tier ~1500 RPD достаточно для 75 видео/день).
+Если ключ не задан — визуальная часть тихо отключается, остаётся обычный
+транскрипт.
+
+### Triggers — управление точками визуального анализа
+
+```bash
+# Создать пользовательский triggers.toml
+youtube-transcribe triggers init
+
+# Добавить фразы (через ;)
+youtube-transcribe triggers add --universal "look here; for example; demo"
+
+# Per-language strict (точное совпадение)
+youtube-transcribe triggers add --strict --lang ru "баг; PR"
+
+# Поднять вес важной фразы
+youtube-transcribe triggers weight set --universal "function" 1.5
+
+# Проверить какие триггеры срабатывают на конкретной фразе
+youtube-transcribe triggers test "вот этот код важен"
+```
+
+### Presets
+
+| Preset | Transcribe | Vision | Detection |
+|---|---|---|---|
+| `eco` | subtitles → user-chosen | off | keywords only |
+| `smart` (default) | subtitles → quality check → fallback | gemini | hybrid |
+| `standard` | whisper-local | gemini | hybrid |
+| `premium` | whisper-large | gemini | LLM full pass |
+
+```bash
+youtube-transcribe URL --preset standard
+youtube-transcribe URL --preset smart --frames-per-window 5
+```
+
+---
+
 ## Batch / каналы
 
 Прогнать пачку URL, целый канал или плейлист — одной командой. Skill кладёт результат в одну папку (`combined.md` + `manifest.json` + `videos/`), которую дальше Claude в чате читает целиком и делает заметку/сводку.

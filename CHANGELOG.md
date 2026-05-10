@@ -3,6 +3,37 @@
 All notable changes to youtube-transcribe will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.0] — 2026-XX-XX
+
+### Added
+- Visual mode (`--with-visuals`) — multimodal анализ видео через Gemini
+  (фреймы + аудио). Embedded screenshots в combined.md.
+- Quality check для транскриптов (smart-режим автоматически выбирает между
+  готовыми субтитрами и whisper).
+- Multilingual triggers через локальные embeddings (paraphrase-multilingual-MiniLM-L12-v2).
+- Triggers CLI tool: `triggers init/add/list/remove/reset/edit/test/weight`.
+- Dynamic presets (eco/smart/standard/premium) с единым реестром опций.
+- `--config` flag для альтернативных config-файлов.
+- `--ocr` opt-in флаг для извлечения текста с keyframes.
+
+### Changed
+- `BatchVideoStatus` расширен полями `quality` и `visual_segments`.
+- `manifest.json` теперь содержит quality breakdown и visual_segments.
+- `combined.md` содержит секцию `### Visual moments` с inline-скриншотами.
+
+### Migration v0.1.x → v0.2
+- Auto-migration существующего `~/.youtube-transcribe/config.toml` в формат
+  `[presets.custom_legacy]` с сохранением всех настроек пользователя.
+- Если есть `GEMINI_API_KEY` → visual mode silent-on в smart-преcете. Иначе
+  поведение полностью совместимо с v0.1.
+
+### Dependencies (new)
+- core: pyspellchecker, pyahocorasick, langdetect, sentence-transformers,
+  lemminflect, pymorphy3, tomlkit, scenedetect, imagehash
+- optional: pytesseract+easyocr (extra `ocr`), kenlm (extra `perplexity`)
+
+---
+
 ## [v0.1.1] — 2026-05-09 (planned hotfix)
 
 ### Fixed

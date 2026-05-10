@@ -138,3 +138,20 @@ If the run fails, the CLI prints a friendly hint (yt-dlp blocked → cookies, ke
 ## Privacy note
 
 The default backend (`whisper-local`) processes everything locally — nothing is sent to the network. Cloud backends (gemini, groq, openai, deepgram, assemblyai, custom) DO send the audio to the respective provider. Mention this if the user asks about privacy or seems sensitive about the content.
+
+### combined.md (v0.2)
+
+Если использовался `--with-visuals`, combined.md содержит секцию
+`### Visual moments` с встроенными скриншотами и описаниями визуальных
+моментов. Это полноценный markdown-туториал — можно использовать как
+основу для заметок и планов изучения.
+
+При запросе пользователя «сделай туториал/инструкцию по этому видео»:
+1. Используй визуальные моменты как структурные точки.
+2. Цитируй timestamps в формате `00:00:45`.
+3. Inline-картинки уже встроены — referencing их через relative paths.
+
+При quality < 0.6 (warning в combined.md):
+- Транскрипт может содержать ошибки распознавания.
+- Скриншоты остаются достоверными.
+- Помогай пользователю работать с тем что есть, не отказывайся.
