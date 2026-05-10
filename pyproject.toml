@@ -60,12 +60,12 @@ ocr = [
     "easyocr>=1.7.0",
 ]
 
-# Perplexity — opt-in. lmppl wraps HuggingFace transformers (already
-# pulled by sentence-transformers core dep). On first call downloads
-# GPT-2 small (~500 MB) for English; non-English languages skip the brick.
-perplexity = [
-    "lmppl>=0.3.0",
-]
+# Perplexity — opt-in. Uses transformers directly (already pulled by
+# sentence-transformers core dep). On first call downloads GPT-2 small
+# (~500 MB) for English; non-English languages skip the brick.
+# No new dep — listed here so user can `--extra perplexity` to indicate intent
+# (currently a no-op marker; future multilingual models may add real deps).
+perplexity = []
 
 [project.scripts]
 youtube-transcribe = "skills.youtube_transcribe.transcribe:cli"
