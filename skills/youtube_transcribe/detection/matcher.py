@@ -120,3 +120,49 @@ def _match_soft(text: str, cfg: TriggerConfig, lang: str) -> tuple[str, float] |
         if phrase_lemmas and phrase_lemmas in text_lemmas:
             return phrase, weight
     return None
+
+
+# === Universal cross-lingual embedding match ===
+
+import numpy as np
+
+_ENCODER_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+
+@lru_cache(maxsize=1)
+def _get_encoder():
+    """Lazy-load embedding model. ~118MB download on first call."""
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(_ENCODER_MODEL)
+
+
+@lru_cache(maxsize=1)
+def _get_universal_embeddings_cached(phrases_tuple: tuple[str, ...]):
+    """Cache by hash of sorted phrases tuple."""
+    encoder = _get_encoder()
+    return encoder.encode(list(phrases_tuple))
+
+
+def _cosine(a, b) -> float:
+    """Single-vector cosine similarity."""
+    return float(np.dot(a, b) / ((np.linalg.norm(a) * np.linalg.norm(b)) + 1e-9))
+
+
+def _match_universal(text: str, cfg: TriggerConfig) -> tuple[str, float, float] | None:
+    """Returns (phrase, score, weight) or None."""
+    if not cfg.universal:
+        return None
+
+    phrases = list(cfg.universal.keys())
+    encoder = _get_encoder()
+    phrase_embs = _get_universal_embeddings_cached(tuple(phrases))
+    text_emb = np.array(encoder.encode(text)).reshape(-1)  # ensure 1-D
+
+    sims = [_cosine(text_emb, np.array(pe).reshape(-1)) for pe in phrase_embs]
+    best_idx = int(np.argmax(sims))
+    best_score = float(sims[best_idx])
+
+    if best_score < cfg.universal_match_threshold:
+        return None
+    phrase = phrases[best_idx]
+    return phrase, best_score, cfg.universal[phrase]
