@@ -1,7 +1,7 @@
 """Base abstractions for all transcription backends."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -23,6 +23,9 @@ class TranscriptionResult:
     language_detected: str | None
     backend_name: str
     duration_seconds: float
+    # === v0.2 ===
+    quality: object | None = None                           # QualityReport | None
+    visual_segments: list = field(default_factory=list)     # list[VisualSegment]
 
 
 @runtime_checkable
