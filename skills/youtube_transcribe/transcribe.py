@@ -220,16 +220,53 @@ def transcribe_cmd(audio_or_url: str, **opts) -> None:
 
     video_id = target.video_id or "unknown"
     triggers_path_opt = opts.get("triggers_path")
-    result = apply_v02_stages(
-        result=result,
-        cfg=cfg_v02,
-        video_path=None,  # mp4 threading wired in Fix A3
-        video_id=video_id,
-        out_dir=output_dir,
-        source=source,
-        triggers_path=Path(triggers_path_opt) if triggers_path_opt else None,
-        no_default_triggers=bool(opts.get("no_default_triggers")),
+
+    # === Download mp4 if visual mode is active ===
+    needs_video = (
+        cfg_v02.get("vision_backend") == "gemini"
+        and is_url(target.url)
     )
+
+    if needs_video:
+        import tempfile
+        from skills.youtube_transcribe.utils.downloader import download_video
+        with tempfile.TemporaryDirectory(prefix="yt-visual-") as visual_tmp:
+            try:
+                video_path = download_video(
+                    target.url, Path(visual_tmp),
+                    cookies_browser=cfg.cookies_browser,
+                )
+            except Exception as e:
+                console.print(f"[yellow]⚠ Визуал отключён — не удалось скачать mp4:[/yellow] {e}",
+                              style="dim")
+                video_path = None
+            result = apply_v02_stages(
+                result=result,
+                cfg=cfg_v02,
+                video_path=video_path,
+                video_id=video_id,
+                out_dir=output_dir,
+                source=source,
+                triggers_path=Path(triggers_path_opt) if triggers_path_opt else None,
+                no_default_triggers=bool(opts.get("no_default_triggers")),
+            )
+    else:
+        # Local file path — use directly (already on disk).
+        local_video_path = (
+            Path(target.url).expanduser().resolve()
+            if not is_url(target.url) and cfg_v02.get("vision_backend") == "gemini"
+            else None
+        )
+        result = apply_v02_stages(
+            result=result,
+            cfg=cfg_v02,
+            video_path=local_video_path,
+            video_id=video_id,
+            out_dir=output_dir,
+            source=source,
+            triggers_path=Path(triggers_path_opt) if triggers_path_opt else None,
+            no_default_triggers=bool(opts.get("no_default_triggers")),
+        )
 
     base_name = sanitize_filename(_derive_basename(target))
     txt_path = output_dir / f"{base_name}.txt"

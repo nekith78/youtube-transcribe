@@ -158,6 +158,56 @@ def download_audio(
     return candidates[0]
 
 
+def download_video(
+    url: str,
+    output_dir: Path,
+    *,
+    cookies_browser: str = "",
+    timeout_seconds: int = 1200,
+) -> Path:
+    """Download mp4 (audio+video) from URL via yt-dlp. Returns path to the mp4 file.
+
+    Used by visual mode (--with-visuals) — Gemini multimodal needs both video frames
+    and audio.
+    """
+    if shutil.which("yt-dlp") is None:
+        raise DownloadError("yt-dlp не найден в PATH.")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    template = str(output_dir / "video_%(id)s.%(ext)s")
+    cmd = [
+        "yt-dlp",
+        # Single combined mp4 file (audio+video). Prefer 720p to keep size manageable
+        # for Gemini File API uploads (max 2 GB, but smaller is faster).
+        "-f", "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best",
+        "--merge-output-format", "mp4",
+        "--geo-bypass",
+        "--no-playlist",
+        "-o", template,
+    ]
+    if cookies_browser:
+        cmd += ["--cookies-from-browser", cookies_browser]
+    cmd.append(url)
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout_seconds, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise DownloadError(f"Скачивание видео превысило {timeout_seconds} сек.")
+
+    if result.returncode != 0:
+        hint = _diagnose_ytdlp_error(result.stderr or "")
+        raise DownloadError(f"yt-dlp упал при скачивании mp4: {hint}\n{result.stderr}")
+
+    # Find the resulting mp4 — yt-dlp may have produced .mp4 directly or merged from parts
+    for f in output_dir.glob("video_*.mp4"):
+        return f
+    # Fallback: any mp4 in the dir
+    for f in output_dir.glob("*.mp4"):
+        return f
+    raise DownloadError(f"yt-dlp finished but no mp4 found in {output_dir}")
+
+
 # ---------------------------------------------------------------------------
 # Task 7B: probe_input + expand_channel_or_playlist for the Resolver
 # ---------------------------------------------------------------------------
