@@ -1,11 +1,13 @@
 """Trigger matching: raw (any lang exact) + strict (per-lang exact) +
 soft (per-lang lemmatized) + universal (cross-lingual embeddings).
 
-Embeddings + lemmatization are added in Tasks 11-12.
+Aho-Corasick automatons are cached by phrase-set tuple via lru_cache —
+a 1500-segment video used to rebuild them 1500 times.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 import ahocorasick
 
@@ -20,25 +22,33 @@ class TriggerMatch:
     phrase: str            # фраза, которая сработала
 
 
-def _build_raw_automaton(cfg: TriggerConfig) -> ahocorasick.Automaton | None:
-    if not cfg.raw:
+@lru_cache(maxsize=16)
+def _build_automaton_cached(
+    items: tuple[tuple[str, float], ...],
+) -> ahocorasick.Automaton | None:
+    """Build Aho-Corasick automaton from a hashable tuple of (phrase, weight) pairs.
+
+    Cached so the same phrase set across many match_segment calls only
+    builds the automaton once.
+    """
+    if not items:
         return None
     auto = ahocorasick.Automaton()
-    for phrase, weight in cfg.raw.items():
+    for phrase, weight in items:
         auto.add_word(phrase.lower(), (phrase.lower(), weight))
     auto.make_automaton()
     return auto
+
+
+def _build_raw_automaton(cfg: TriggerConfig) -> ahocorasick.Automaton | None:
+    return _build_automaton_cached(tuple(sorted(cfg.raw.items())))
 
 
 def _build_strict_automaton(cfg: TriggerConfig, lang: str) -> ahocorasick.Automaton | None:
     lang_cfg = cfg.languages.get(lang)
     if not lang_cfg or not lang_cfg.strict:
         return None
-    auto = ahocorasick.Automaton()
-    for phrase, weight in lang_cfg.strict.items():
-        auto.add_word(phrase.lower(), (phrase.lower(), weight))
-    auto.make_automaton()
-    return auto
+    return _build_automaton_cached(tuple(sorted(lang_cfg.strict.items())))
 
 
 def _match_aho(text: str, auto: ahocorasick.Automaton | None) -> tuple[str, float] | None:

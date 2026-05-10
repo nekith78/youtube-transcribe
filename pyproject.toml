@@ -1,6 +1,6 @@
 [project]
 name = "youtube-transcribe"
-version = "0.2.1"
+version = "0.2.2"
 description = "Transcribe YouTube videos and local media via 8 interchangeable backends (Whisper local / subtitles / Gemini / Groq / OpenAI / Deepgram / AssemblyAI / custom)."
 readme = "README.md"
 # Upper bound `<3.14` is required by `scenedetect` 0.7 (no wheels for Python 3.14
