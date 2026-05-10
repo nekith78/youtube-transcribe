@@ -117,4 +117,19 @@ def apply_v02_stages(
             )
             result.visual_segments = visuals
 
+        # === v0.2: OCR (opt-in) ===
+        if cfg.get("ocr") and result.visual_segments:
+            from skills.youtube_transcribe.vision.ocr import ocr_keyframes
+            for vs in result.visual_segments:
+                kf_paths = [out_dir / kf for kf in vs.keyframes]
+                ocr_texts = ocr_keyframes(kf_paths)
+                # Append non-empty OCR results to detected_objects
+                for text in ocr_texts:
+                    if text:
+                        # Mutate via dict access since dataclass is frozen
+                        object.__setattr__(
+                            vs, "detected_objects",
+                            list(vs.detected_objects) + [f"ocr:{text[:200]}"],
+                        )
+
     return result
