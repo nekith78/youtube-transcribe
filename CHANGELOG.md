@@ -3,6 +3,31 @@
 All notable changes to youtube-transcribe will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] — 2026-05-11
+
+Local-LLM + multi-speaker + multi-language.
+
+### Added
+
+- **Ollama backend for ASR correction** (`--correct-asr-backend ollama`).
+  Local llama3.2:3b by default — no API key, no cloud round-trip.
+  POSTs to http://localhost:11434/api/generate via stdlib urllib.
+  Two new registry fields: `ollama_model` (default `llama3.2:3b`) and
+  `ollama_host` (default `http://localhost:11434`).
+- **Speaker diarization** via pyannote.audio (`--diarize`). Prepends
+  each segment's text with `[SPEAKER_NN]`. Opt-in `[diarization]` extra,
+  requires HF_TOKEN env var + license at
+  https://huggingface.co/pyannote/speaker-diarization-3.1.
+  `diarize_num_speakers` field constrains the model when known
+  (0 = auto-detect).
+- **Auto-translate** (`--translate-to <lang>`). Translates each segment's
+  text via cheap LLM (gemini-flash / claude-haiku / gpt-4o-mini / local
+  Ollama) while preserving timestamps + speaker labels. Backend chosen
+  via `--translate-backend` (default `gemini`).
+
+### Tests
+- 510 unit tests green (was 484 in v0.4.1; +26 v0.5 tests).
+
 ## [0.4.1] — 2026-05-11
 
 ### Added

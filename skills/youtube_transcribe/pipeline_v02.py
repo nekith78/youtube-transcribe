@@ -174,6 +174,42 @@ def apply_v02_stages(
                     new_breakdown["asr_corrected"] = corrector_backend
                     object.__setattr__(report, "breakdown", new_breakdown)
 
+    # === Translation (opt-in, runs after quality+correction, before vision) ===
+    target_lang = (cfg.get("translate_to") or "").strip()
+    if target_lang and result.segments:
+        from skills.youtube_transcribe.quality.translator import translate_transcript
+        tr_backend = cfg.get("translate_backend", "gemini")
+        if tr_backend == "ollama":
+            tr_api_key = None
+            tr_can_run = True
+        else:
+            tr_key = {
+                "gemini": "gemini",
+                "claude": "anthropic",
+                "openai": "openai",
+            }.get(tr_backend)
+            tr_api_key = _config_mod.get_api_key(tr_key) if tr_key else None
+            tr_can_run = tr_api_key is not None
+
+        if tr_can_run:
+            translated = translate_transcript(
+                result.segments,
+                source_lang=result.language_detected or "auto",
+                target_lang=target_lang,
+                api_key=tr_api_key,
+                backend=tr_backend,
+                ollama_model=cfg.get("ollama_model", "llama3.2:3b"),
+                ollama_host=cfg.get("ollama_host", "http://localhost:11434"),
+            )
+            if translated is not result.segments:
+                result.segments = translated
+                # Reflect translation in language_detected so downstream
+                # writers know the output is in target_lang.
+                try:
+                    object.__setattr__(result, "language_detected", target_lang)
+                except Exception:
+                    pass
+
     # === Visual detection + annotation ===
     vision_backend_name = cfg.get("vision_backend", "off")
     if vision_backend_name in ("gemini", "claude", "openai") and video_path is not None:

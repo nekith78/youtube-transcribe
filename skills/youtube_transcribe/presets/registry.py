@@ -147,6 +147,22 @@ REGISTRY: list[OptionField] = [
         ),
         section="smart",
     ),
+    # === Translation (v0.5) ===
+    OptionField(
+        key="translate_to", type=str, default="",
+        choices=None,
+        description=(
+            "Target language for auto-translation (ISO code like 'en', "
+            "'ru', 'es', or full name 'English'). Empty = no translation."
+        ),
+        section="output",
+    ),
+    OptionField(
+        key="translate_backend", type=str, default="gemini",
+        choices=["gemini", "claude", "openai", "ollama"],
+        description="LLM provider for translation (same options as correct_asr).",
+        section="output",
+    ),
 ]
 
 

@@ -139,6 +139,14 @@ def cli() -> None:
               type=click.Choice(["gemini", "claude", "openai", "ollama"]), default=None,
               help="LLM provider for ASR correction (default: gemini; "
                    "ollama=local llama via `ollama serve`).")
+@click.option("--diarize", "diarize_opt", is_flag=True, default=None,
+              help="Run speaker diarization via pyannote.audio "
+                   "(needs HF_TOKEN + `[diarization]` extra).")
+@click.option("--translate-to", "translate_to_opt", default=None,
+              help="Translate transcript to language (ISO code or name).")
+@click.option("--translate-backend", "translate_backend_opt",
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]), default=None,
+              help="LLM provider for translation (default: gemini).")
 def transcribe_cmd(audio_or_url: str, **opts) -> None:
     """Transcribe a YouTube URL, supported video URL, or local audio/video file."""
     if not CONFIG_PATH.exists():
@@ -205,6 +213,12 @@ def transcribe_cmd(audio_or_url: str, **opts) -> None:
         cli_overrides.setdefault("quality_check", True)
     if opts.get("correct_asr_backend_opt"):
         cli_overrides["correct_asr_backend"] = opts["correct_asr_backend_opt"]
+    if opts.get("diarize_opt") is True:
+        cli_overrides["diarize"] = True
+    if opts.get("translate_to_opt"):
+        cli_overrides["translate_to"] = opts["translate_to_opt"]
+    if opts.get("translate_backend_opt"):
+        cli_overrides["translate_backend"] = opts["translate_backend_opt"]
 
     preset_name = opts.get("preset") or "smart"
     if preset_name not in list_preset_names():
@@ -511,6 +525,14 @@ def _infer_source_type(targets: list[ResolvedTarget], from_file: Path | None) ->
               type=click.Choice(["gemini", "claude", "openai", "ollama"]), default=None,
               help="LLM provider for ASR correction (default: gemini; "
                    "ollama=local llama via `ollama serve`).")
+@click.option("--diarize", "diarize_opt", is_flag=True, default=None,
+              help="Run speaker diarization via pyannote.audio "
+                   "(needs HF_TOKEN + `[diarization]` extra).")
+@click.option("--translate-to", "translate_to_opt", default=None,
+              help="Translate transcript to language (ISO code or name).")
+@click.option("--translate-backend", "translate_backend_opt",
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]), default=None,
+              help="LLM provider for translation (default: gemini).")
 def batch_cmd(
     inputs: tuple[str, ...],
     from_file: Path | None,
@@ -558,6 +580,12 @@ def batch_cmd(
         cli_overrides.setdefault("quality_check", True)
     if opts.get("correct_asr_backend_opt"):
         cli_overrides["correct_asr_backend"] = opts["correct_asr_backend_opt"]
+    if opts.get("diarize_opt") is True:
+        cli_overrides["diarize"] = True
+    if opts.get("translate_to_opt"):
+        cli_overrides["translate_to"] = opts["translate_to_opt"]
+    if opts.get("translate_backend_opt"):
+        cli_overrides["translate_backend"] = opts["translate_backend_opt"]
 
     preset_name = opts.get("preset") or "smart"
     if preset_name not in list_preset_names():
