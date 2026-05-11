@@ -51,6 +51,16 @@ from skills.youtube_transcribe.wizard import run_wizard
 
 console = Console()
 
+
+def _stdin_is_tty() -> bool:
+    """Return True if stdin is an interactive terminal.
+
+    Extracted as a standalone function so tests can patch it without
+    fighting CliRunner's stdin replacement.
+    """
+    return sys.stdin.isatty()
+
+
 BACKEND_CHOICES = [
     "smart", "subtitles", "whisper-local",
     "gemini", "groq", "openai", "deepgram", "assemblyai", "custom",
@@ -1274,6 +1284,14 @@ def analyze_cmd(
     else:
         user_prompt = prompt_file.read_text(encoding="utf-8")
 
+    # --latest / --all / --select are pairwise mutually exclusive.
+    sel_flags = sum(1 for x in (latest, all_opt, bool(select_opt)) if x)
+    if sel_flags > 1:
+        console.print(
+            "[red]--latest / --all / --select взаимоисключающи (exclusive).[/red]"
+        )
+        sys.exit(2)
+
     # 2. API-key check (ollama is local, no key).
     if backend_opt == "ollama":
         api_key: str | None = None
@@ -1291,10 +1309,29 @@ def analyze_cmd(
             sys.exit(4)
 
     # 3. Resolve SOURCE → list[VideoSource].
-    cfg = load_config(CONFIG_PATH) if CONFIG_PATH.exists() else None
-    outputs_dir = Path(
-        (cfg.output_dir if cfg else "./transcripts")
-    ).expanduser()
+    cfg = load_config(CONFIG_PATH)
+    outputs_dir = Path(cfg.output_dir).expanduser()
+
+    # If SOURCE is omitted and --latest is not set, offer batch picker in TTY.
+    if source is None and not latest:
+        if not _stdin_is_tty():
+            console.print(
+                "[red]Не указан SOURCE и нет --latest, "
+                "а stdin не TTY — picker недоступен.[/red]"
+            )
+            sys.exit(3)
+        from skills.youtube_transcribe.analyze.picker import (
+            pick_batch, PickerCancelled,
+        )
+        try:
+            source = pick_batch(outputs_dir)
+        except FileNotFoundError as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(3)
+        except PickerCancelled:
+            console.print("[yellow]Отменено.[/yellow]")
+            sys.exit(5)
+
     try:
         videos = resolve_source(source, outputs_dir=outputs_dir, latest=latest)
     except FileNotFoundError as e:
@@ -1305,8 +1342,9 @@ def analyze_cmd(
         sys.exit(3)
 
     total_videos = len(videos)
-    # 4. Subset selection (--all / --select / picker — task 10 wires picker).
-    if all_opt:
+
+    # 4. Subset selection: --all / --select / single-file / picker.
+    if all_opt or latest:
         chosen = videos
     elif select_opt:
         from skills.youtube_transcribe.analyze.select_parser import parse_select
@@ -1317,18 +1355,22 @@ def analyze_cmd(
             sys.exit(2)
         chosen = [videos[i] for i in indices]
     elif source is not None and source.is_file():
-        # Single-file SOURCE: no picker, just use it.
         chosen = videos
     else:
-        # Interactive picker — added in Task 10.
-        console.print(
-            "[red]Не указано --all / --select / --latest, а интерактив пока выключен.[/red]"
+        if not _stdin_is_tty():
+            console.print(
+                "[red]Не указано --all / --select / --latest, "
+                "а stdin не TTY — picker недоступен.[/red]"
+            )
+            sys.exit(3)
+        from skills.youtube_transcribe.analyze.picker import (
+            pick_videos, PickerCancelled,
         )
-        sys.exit(3)
-
-    if not chosen:
-        console.print("[red]Пустой выбор — нечего отправлять.[/red]")
-        sys.exit(3)
+        try:
+            chosen = pick_videos(videos)
+        except PickerCancelled:
+            console.print("[yellow]Отменено.[/yellow]")
+            sys.exit(5)
 
     # 5. Build the full prompt.
     full_prompt = build_prompt(user_prompt, chosen, max_chars=max_chars)
