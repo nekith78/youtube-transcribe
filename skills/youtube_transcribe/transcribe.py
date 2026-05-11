@@ -1203,9 +1203,194 @@ def summarize_cmd(
     console.print(f"  [bold]{out_path}[/bold]")
 
 
+@cli.command(name="analyze")
+@click.argument("source", required=False,
+                type=click.Path(path_type=Path))
+@click.option("--prompt", "prompt_inline", default=None,
+              help="User query passed verbatim to the LLM.")
+@click.option("--prompt-file", "prompt_file", default=None,
+              type=click.Path(exists=True, path_type=Path),
+              help="Read prompt text from this file (.md/.txt).")
+@click.option("--backend", "backend_opt",
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]),
+              default="gemini", show_default=True,
+              help="LLM provider.")
+@click.option("--latest", is_flag=True, default=False,
+              help="Use the most recently modified batch under output-dir.")
+@click.option("--all", "all_opt", is_flag=True, default=False,
+              help="Analyze every video in the batch — skip the picker.")
+@click.option("--select", "select_opt", default=None,
+              help='1-based selection like "1,3,5-7" — skips the picker.')
+@click.option("--append-to", "append_to", default=None,
+              type=click.Path(path_type=Path),
+              help="Append the block to this markdown file instead of "
+                   "creating a new one.")
+@click.option("--output", "output_opt", default=None,
+              type=click.Path(path_type=Path),
+              help="Override output file path.")
+@click.option("--ollama-model", "ollama_model_opt", default=None,
+              help="Ollama model tag (default: llama3.2:3b).")
+@click.option("--ollama-host", "ollama_host_opt", default=None,
+              help="Ollama HTTP host (default: http://localhost:11434).")
+@click.option("--no-stdout", "no_stdout", is_flag=True, default=False,
+              help="Don't print the LLM response to stdout (file only).")
+@click.option("--max-chars", "max_chars", type=int, default=60_000,
+              show_default=True,
+              help="Per-transcript soft truncation in characters.")
+def analyze_cmd(
+    source: Path | None,
+    prompt_inline: str | None,
+    prompt_file: Path | None,
+    backend_opt: str,
+    latest: bool,
+    all_opt: bool,
+    select_opt: str | None,
+    append_to: Path | None,
+    output_opt: Path | None,
+    ollama_model_opt: str | None,
+    ollama_host_opt: str | None,
+    no_stdout: bool,
+    max_chars: int,
+) -> None:
+    """Analyze one or more transcripts via an external LLM."""
+    from datetime import datetime
+    from skills.youtube_transcribe.analyze.source_resolver import (
+        resolve_source,
+    )
+    from skills.youtube_transcribe.analyze.prompt_builder import build_prompt
+    from skills.youtube_transcribe.analyze import runner as analyze_runner
+    from skills.youtube_transcribe.analyze.output_writer import (
+        analysis_filename, write_analysis, append_analysis,
+    )
+
+    # 1. Validate prompt args (exactly one required).
+    if bool(prompt_inline) == bool(prompt_file):
+        console.print(
+            "[red]Нужен ровно один из[/red] --prompt / --prompt-file."
+        )
+        sys.exit(2)
+    if prompt_inline is not None:
+        user_prompt = prompt_inline
+    else:
+        user_prompt = prompt_file.read_text(encoding="utf-8")
+
+    # 2. API-key check (ollama is local, no key).
+    if backend_opt == "ollama":
+        api_key: str | None = None
+    else:
+        key_lookup = {
+            "gemini": "gemini", "claude": "anthropic", "openai": "openai",
+        }[backend_opt]
+        api_key = get_api_key(key_lookup)
+        if not api_key:
+            console.print(
+                f"[red]Нет ключа для backend={backend_opt}[/red]. "
+                f"Установи через `youtube-transcribe config set-key {key_lookup}` "
+                f"или используй --backend ollama (локально)."
+            )
+            sys.exit(4)
+
+    # 3. Resolve SOURCE → list[VideoSource].
+    cfg = load_config(CONFIG_PATH) if CONFIG_PATH.exists() else None
+    outputs_dir = Path(
+        (cfg.output_dir if cfg else "./transcripts")
+    ).expanduser()
+    try:
+        videos = resolve_source(source, outputs_dir=outputs_dir, latest=latest)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(3)
+    if not videos:
+        console.print("[red]Не найдено ни одного транскрипта в источнике.[/red]")
+        sys.exit(3)
+
+    total_videos = len(videos)
+    # 4. Subset selection (--all / --select / picker — task 10 wires picker).
+    if all_opt:
+        chosen = videos
+    elif select_opt:
+        from skills.youtube_transcribe.analyze.select_parser import parse_select
+        try:
+            indices = parse_select(select_opt, total=total_videos)
+        except ValueError as e:
+            console.print(f"[red]--select: {e}[/red]")
+            sys.exit(2)
+        chosen = [videos[i] for i in indices]
+    elif source is not None and source.is_file():
+        # Single-file SOURCE: no picker, just use it.
+        chosen = videos
+    else:
+        # Interactive picker — added in Task 10.
+        console.print(
+            "[red]Не указано --all / --select / --latest, а интерактив пока выключен.[/red]"
+        )
+        sys.exit(3)
+
+    if not chosen:
+        console.print("[red]Пустой выбор — нечего отправлять.[/red]")
+        sys.exit(3)
+
+    # 5. Build the full prompt.
+    full_prompt = build_prompt(user_prompt, chosen, max_chars=max_chars)
+
+    # 6. Call LLM.
+    response = analyze_runner.run_analysis(
+        full_prompt,
+        backend=backend_opt,
+        api_key=api_key,
+        ollama_model=ollama_model_opt or "llama3.2:3b",
+        ollama_host=ollama_host_opt or "http://localhost:11434",
+    )
+    if not response.strip():
+        console.print(
+            "[red]LLM не вернул ответ.[/red] Возможно, нет сети, "
+            "истекла квота, или `ollama serve` не запущен."
+        )
+        sys.exit(4)
+
+    # 7. Write file (append vs new).
+    now = datetime.now()
+    backend_label = backend_opt
+    if append_to is not None:
+        target = append_analysis(
+            target=append_to,
+            body=response,
+            user_prompt=user_prompt,
+            backend_label=backend_label,
+            videos=chosen,
+            total_videos=total_videos,
+            now=now,
+        )
+    else:
+        if output_opt is not None:
+            out_path = output_opt
+        elif source is not None and source.is_file():
+            out_path = source.with_name(
+                f"{source.stem}.{analysis_filename(now)}"
+            )
+        else:
+            base_dir = source if source is not None else videos[0].transcript_path.parent
+            out_path = base_dir / analysis_filename(now)
+        target = write_analysis(
+            out_path=out_path,
+            body=response,
+            user_prompt=user_prompt,
+            backend_label=backend_label,
+            videos=chosen,
+            total_videos=total_videos,
+            now=now,
+        )
+
+    # 8. stdout dump (unless --no-stdout).
+    if not no_stdout:
+        click.echo(response)
+    console.print(f"[green]✓[/green] analysis via {backend_opt}")
+    console.print(f"  [bold]{target}[/bold]")
+
+
 __all__ = [
     "cli", "transcribe_cmd", "batch_cmd", "config",
-    "webui_cmd", "summarize_cmd",
+    "webui_cmd", "summarize_cmd", "analyze_cmd",
 ]
 
 
