@@ -54,6 +54,32 @@ def test_research_calls_pipeline(tmp_path: Path):
     assert kwargs["limit"] == 5
     assert kwargs["no_analyze"] is True
     assert kwargs["yes"] is True
+    # --backend must reach _run_batch_pipeline as the canonical key "backend"
+    # (not "backend_opt"). The latter would let cfg.default_backend win,
+    # silently overriding the user-supplied flag.
+    assert kwargs["batch_opts"].get("backend") == "subtitles"
+
+
+def test_research_backend_flag_lands_in_batch_opts(tmp_path: Path):
+    """Regression for v0.7 silent --backend ignore: dest must be 'backend',
+    not 'backend_opt', so _run_batch_pipeline.opts.get('backend') picks
+    it up instead of falling back to cfg.default_backend."""
+    with patch(
+        "skills.youtube_transcribe.research.pipeline.run_research",
+        return_value=None,
+    ) as mock_pipe:
+        runner = CliRunner()
+        runner.invoke(cli, [
+            "research", "x",
+            "--backend", "whisper-local",
+            "--language", "ru",
+            "--no-analyze", "--yes",
+        ], catch_exceptions=False)
+    opts = mock_pipe.call_args.kwargs["batch_opts"]
+    assert opts.get("backend") == "whisper-local"
+    assert opts.get("language") == "ru"
+    assert "backend_opt" not in opts
+    assert "language_opt" not in opts
 
 
 def test_research_mutex_prompt_and_prompt_file_when_analyze(tmp_path: Path):

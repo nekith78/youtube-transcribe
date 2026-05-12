@@ -146,7 +146,7 @@ def _default_editor() -> str:
 @click.option("--ollama-host", "ollama_host_opt", default=None)
 @click.option("--no-stdout", "no_stdout_opt", is_flag=True, default=False)
 @click.option("--output-dir", "output_dir_opt", default=None)
-@click.option("--backend", "backend_opt",
+@click.option("--backend",
               type=click.Choice([
                   "subtitles", "whisper-local", "gemini", "groq",
                   "openai", "deepgram", "assemblyai", "custom", "smart",
@@ -154,7 +154,7 @@ def _default_editor() -> str:
 @click.option("--whisper-model",
               type=click.Choice(["turbo", "large", "medium", "small", "distil"]),
               default=None)
-@click.option("--language", "language_opt", default=None)
+@click.option("--language", default=None)
 @click.option("--workers", "workers_opt", type=int, default=1)
 def update_cmd(
     group, days, since, until, match, filter_text, no_rss, yes, no_analyze,

@@ -1,13 +1,21 @@
 """Subscribes command orchestration — stateful incremental update.
 
-Default: per-channel RSS-first discovery filtered by last_seen_published.
-After successful run, updates last_seen_* in TOML.
+State update rules:
+  • normal incremental (no --days/--since/--until): advance state to the
+    newest RSS entry seen — even if transcription failed. A one-off network
+    blip / 429 doesn't permanently re-replay the same videos; failed ids
+    end up in `errors.log` and can be picked up via `research --since`.
+  • first run (channel has no last_seen_*): MUST be invoked with explicit
+    --days or --since to bootstrap the window. State is initialized in
+    this run regardless of transcription outcome.
+  • override on a channel that already has state (--days/--since/--until):
+    one-off window, state is NOT touched — keeps the incremental stream
+    intact for normal subsequent runs.
 
-Override (--days / --since / --until): applies global window, does NOT
-update state — keeps incremental stream intact for normal runs.
-
-First-run for channels without state: requires explicit --days or
---since (else SubscribesError).
+The "state advances after RSS, not after transcribe success" rule is the
+fix for the v0.7 bootstrap deadlock: previously, --days marked the whole
+run as "override → don't update state", so first run never initialized
+state and the next incremental run still asked for --days.
 """
 from __future__ import annotations
 
@@ -180,7 +188,14 @@ def run_subscribes_update(
                 source_language="(subscribes)",
             ))
 
-        if not is_override:
+        # Should state advance? Two cases that DO update:
+        #   1. normal incremental (no override flags) — sliding window forward
+        #   2. bootstrap — channel had no state, this is the first run, the
+        #      --days/--since/--until window is initializing rather than
+        #      "overriding" anything.
+        # Override on a channel that already has state stays a no-op.
+        is_bootstrap = ch.last_seen_published is None
+        if not is_override or is_bootstrap:
             newest = max(entries, key=lambda e: e.published)
             state_updates.append((
                 ch.channel_id, newest.video_id, newest.published.isoformat(),
@@ -250,10 +265,12 @@ def run_subscribes_update(
         )
         analyze_produced = any(batch_dir.glob("analysis-*.md"))
 
-    # State update (only if NOT override and we actually ran successfully)
-    if not is_override and batch_dir is not None:
-        for chan_id, vid, pub in state_updates:
-            update_last_seen(subscribes_path, chan_id, vid, pub)
+    # State update: collected per-channel above according to bootstrap /
+    # incremental / override rules. Applied unconditionally — we want state
+    # to advance even when 0/N transcripts succeeded (failed ids show up in
+    # errors.log; user can re-fetch them via `research --since`).
+    for chan_id, vid, pub in state_updates:
+        update_last_seen(subscribes_path, chan_id, vid, pub)
 
     if batch_dir is None:
         status = "failed"

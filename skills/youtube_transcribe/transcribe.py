@@ -1654,12 +1654,12 @@ def analyze_cmd(
 @click.option("--no-stdout", "no_stdout_opt", is_flag=True, default=False)
 @click.option("--output-dir", "output_dir_opt", default=None)
 @click.option("--batch-name", "batch_name_opt", default=None)
-@click.option("--backend", "backend_opt",
+@click.option("--backend",
               type=click.Choice(BACKEND_CHOICES), default=None)
 @click.option("--whisper-model",
               type=click.Choice(["turbo", "large", "medium", "small", "distil"]),
               default=None)
-@click.option("--language", "language_opt", default=None)
+@click.option("--language", default=None)
 @click.option("--no-shorts", "no_shorts_opt", is_flag=True, default=False)
 @click.option("--min-duration", "min_duration_opt", type=int, default=None)
 @click.option("--max-duration", "max_duration_opt", type=int, default=None)

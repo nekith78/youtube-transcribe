@@ -94,6 +94,94 @@ def test_stateful_default_uses_last_seen(tmp_path: Path):
     assert args[2] == "new1"
 
 
+def test_bootstrap_first_run_initializes_state(tmp_path: Path):
+    """Channel without state + --days 7: state IS initialized (bootstrap).
+
+    Pre-fix v0.7 bug: --days marked the run as "override → don't update
+    state", so first-run with --days produced an empty state, and the next
+    incremental call kept asking for --days. Now bootstrap is recognized
+    separately and the state is seeded.
+    """
+    from skills.youtube_transcribe.subscribes.pipeline import run_subscribes_update
+    sub_path = tmp_path / "subscribes.toml"
+    ch = _channel(last_id=None, last_pub=None)  # ← no state yet
+    entries = [_rss("v1", "2026-05-12T00:00:00+00:00")]
+
+    with patch(
+        "skills.youtube_transcribe.subscribes.pipeline.load_subscribes",
+        return_value=[ch],
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline.fetch_rss",
+        return_value=entries,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._run_batch_pipeline",
+        return_value=tmp_path / "out",
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline.update_last_seen",
+    ) as mock_state, patch(
+        "skills.youtube_transcribe.subscribes.pipeline._stdin_is_tty",
+        return_value=False,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._append_history",
+    ):
+        run_subscribes_update(
+            subscribes_path=sub_path,
+            group=None, days=7,  # ← bootstrap window
+            since=None, until=None,
+            match=None, filter_text=None,
+            no_rss=False, yes=True, no_analyze=True,
+            prompt=None, prompt_file=None,
+            analyze_backend="gemini", filter_backend="gemini",
+            ollama_model="llama3.2:3b", ollama_host="http://localhost:11434",
+            no_stdout=False, output_dir=str(tmp_path),
+            api_keys={}, batch_opts={},
+        )
+    # Bootstrap recognized → state initialized to the newest entry.
+    mock_state.assert_called_once()
+    assert mock_state.call_args.args[2] == "v1"
+
+
+def test_state_advances_when_transcribe_batch_returns_none(tmp_path: Path):
+    """Variant 2: state must advance even if _run_batch_pipeline returns None
+    (e.g. catastrophic transcribe failure). Otherwise a temporary blip would
+    pin the channel forever."""
+    from skills.youtube_transcribe.subscribes.pipeline import run_subscribes_update
+    sub_path = tmp_path / "subscribes.toml"
+    ch = _channel(last_id="oldvid", last_pub="2026-05-10T00:00:00+00:00")
+    entries = [_rss("recent", "2026-05-12T00:00:00+00:00")]
+
+    with patch(
+        "skills.youtube_transcribe.subscribes.pipeline.load_subscribes",
+        return_value=[ch],
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline.fetch_rss",
+        return_value=entries,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._run_batch_pipeline",
+        return_value=None,  # ← simulate batch failure
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline.update_last_seen",
+    ) as mock_state, patch(
+        "skills.youtube_transcribe.subscribes.pipeline._stdin_is_tty",
+        return_value=False,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._append_history",
+    ):
+        run_subscribes_update(
+            subscribes_path=sub_path,
+            group=None, days=None, since=None, until=None,
+            match=None, filter_text=None,
+            no_rss=False, yes=True, no_analyze=True,
+            prompt=None, prompt_file=None,
+            analyze_backend="gemini", filter_backend="gemini",
+            ollama_model="llama3.2:3b", ollama_host="http://localhost:11434",
+            no_stdout=False, output_dir=str(tmp_path),
+            api_keys={}, batch_opts={},
+        )
+    mock_state.assert_called_once()
+    assert mock_state.call_args.args[2] == "recent"
+
+
 def test_override_days_skips_state_update(tmp_path: Path):
     """When --days override is used, state must NOT be updated."""
     from skills.youtube_transcribe.subscribes.pipeline import run_subscribes_update

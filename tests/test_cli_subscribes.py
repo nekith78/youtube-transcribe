@@ -172,6 +172,37 @@ def test_update_delegates_to_pipeline(tmp_path: Path):
     assert kwargs["days"] == 7
     assert kwargs["no_analyze"] is True
     assert kwargs["yes"] is True
+    # --backend subtitles must land in batch_opts under the canonical "backend"
+    # key so _run_batch_pipeline.opts.get("backend") sees it. Bug v0.7: the
+    # dest was renamed to "backend_opt", silently routing transcribes to
+    # cfg.default_backend.
+    assert kwargs["batch_opts"].get("backend") == "subtitles"
+
+
+def test_update_backend_and_language_use_canonical_keys(tmp_path: Path):
+    """Regression: --backend / --language reach the pipeline as bare keys."""
+    sub_path = tmp_path / "subscribes.toml"
+    sub_path.write_text("# empty\n", encoding="utf-8")
+    with patch(
+        "skills.youtube_transcribe.subscribes.cli.SUBSCRIBES_PATH",
+        new=sub_path,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline.run_subscribes_update",
+        return_value=None,
+    ) as mock_pipe:
+        runner = CliRunner()
+        runner.invoke(cli, [
+            "subscribes", "update",
+            "--days", "7",
+            "--no-analyze", "--yes",
+            "--backend", "whisper-local",
+            "--language", "ru",
+        ], catch_exceptions=False)
+    opts = mock_pipe.call_args.kwargs["batch_opts"]
+    assert opts.get("backend") == "whisper-local"
+    assert opts.get("language") == "ru"
+    assert "backend_opt" not in opts
+    assert "language_opt" not in opts
 
 
 def test_update_subscribes_error_exits_2(tmp_path: Path):

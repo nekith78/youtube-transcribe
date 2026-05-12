@@ -270,7 +270,7 @@ phase5_3a() {
   [[ -f ~/.youtube-transcribe/subscribes.toml ]] && \
     mv ~/.youtube-transcribe/subscribes.toml ~/.youtube-transcribe/subscribes.toml.qa-bak
 
-  $YT subscribes add "https://www.youtube.com/@AnthropicAI" --group ai
+  $YT subscribes add "https://www.youtube.com/@anthropic-ai" --group ai
   local code=$?
 
   if [[ $code -ne 0 ]]; then
@@ -284,10 +284,10 @@ phase5_3a() {
   $YT subscribes list
   ok "list работает"
 
-  if grep -q "@AnthropicAI" ~/.youtube-transcribe/subscribes.toml 2>/dev/null; then
-    ok "@AnthropicAI в subscribes.toml"
+  if grep -q "@anthropic-ai" ~/.youtube-transcribe/subscribes.toml 2>/dev/null; then
+    ok "@anthropic-ai в subscribes.toml"
   else
-    fail "@AnthropicAI не записан"
+    fail "@anthropic-ai не записан"
   fi
 
   note "subscribes.toml сохранён. Запусти phase5.3b для update."
@@ -299,8 +299,8 @@ phase5_3b() {
   step "Phase 5.3b — subscribes update (first run + incremental)"
   require_key "GEMINI_API_KEY" || return 1
 
-  if ! grep -q "@AnthropicAI" ~/.youtube-transcribe/subscribes.toml 2>/dev/null; then
-    fail "subscribes.toml не содержит @AnthropicAI"
+  if ! grep -q "@anthropic-ai" ~/.youtube-transcribe/subscribes.toml 2>/dev/null; then
+    fail "subscribes.toml не содержит @anthropic-ai"
     note "Сначала запусти: scripts/qa.sh phase5.3a"
     return 1
   fi
@@ -342,7 +342,7 @@ phase5_3c() {
   step "Phase 5.3c — subscribes update --no-rss (yt-dlp путь)"
   require_key "GEMINI_API_KEY" || return 1
 
-  if ! grep -q "@AnthropicAI" ~/.youtube-transcribe/subscribes.toml 2>/dev/null; then
+  if ! grep -q "@anthropic-ai" ~/.youtube-transcribe/subscribes.toml 2>/dev/null; then
     fail "subscribes.toml пустой (запусти phase5.3a)"
     return 1
   fi
