@@ -136,6 +136,95 @@ phase5_1() {
   note "Открой: less $dir/analysis-*.md"
 }
 
+# ── Phase 5.1b: SP refinement path (--days not on a preset) ────────────
+phase5_1b() {
+  step "Phase 5.1b — research --days 14 (SP rounded UP + client refine)"
+  require_key "GEMINI_API_KEY" || return 1
+
+  rm -rf "$QA_DIR/r-en-14d"
+  # --days 14 → no exact SP preset, nearest UP is "1 month". source.py
+  # uses full extract so upload_date is populated, then pipeline filters
+  # client-side to the precise 14-day window.
+  $YT research "AI agents" \
+    --languages en --days 14 --limit 3 \
+    --backend subtitles \
+    --prompt "Bullet-point what's new in AI agents this week." \
+    --analyze-backend gemini \
+    --yes \
+    --output-dir "$QA_DIR/r-en-14d"
+  local code=$?
+
+  if [[ $code -ne 0 ]]; then
+    fail "research exit $code"
+    return 1
+  fi
+  ok "research exit 0"
+
+  local dir
+  dir=$(find "$QA_DIR/r-en-14d" -maxdepth 1 -mindepth 1 -type d | head -1)
+  if [[ -z "$dir" ]]; then
+    fail "batch folder не найден"
+    return 1
+  fi
+  ok "batch folder: $(basename "$dir")"
+
+  if ls "$dir"/analysis-*.md >/dev/null 2>&1; then
+    ok "analysis-*.md создан"
+  else
+    fail "analysis-*.md отсутствует"
+    return 1
+  fi
+
+  # Sanity check: manifest should list videos with upload_date within 14d.
+  if [[ -f "$dir/manifest.json" ]]; then
+    note "manifest:  $dir/manifest.json"
+    note "проверь даты:  grep -i upload_date $dir/manifest.json"
+  fi
+}
+
+# ── Phase 5.1c: research --since (explicit date instead of --days) ─────
+phase5_1c() {
+  step "Phase 5.1c — research --since (explicit date → days_hint → SP)"
+  require_key "GEMINI_API_KEY" || return 1
+
+  rm -rf "$QA_DIR/r-en-since"
+  # 28 days ago — also non-exact preset → SP "1 month" + full extract.
+  # Use python rather than `date` for portability (BSD date != GNU date).
+  local since
+  since=$(python3 -c "import datetime as d; print((d.date.today()-d.timedelta(days=28)).isoformat())")
+  note "since=$since"
+
+  $YT research "AI agents" \
+    --languages en --since "$since" --limit 3 \
+    --backend subtitles \
+    --prompt "Bullet-point what's notable in this window." \
+    --analyze-backend gemini \
+    --yes \
+    --output-dir "$QA_DIR/r-en-since"
+  local code=$?
+
+  if [[ $code -ne 0 ]]; then
+    fail "research exit $code"
+    return 1
+  fi
+  ok "research exit 0"
+
+  local dir
+  dir=$(find "$QA_DIR/r-en-since" -maxdepth 1 -mindepth 1 -type d | head -1)
+  if [[ -z "$dir" ]]; then
+    fail "batch folder не найден"
+    return 1
+  fi
+  ok "batch folder: $(basename "$dir")"
+
+  if ls "$dir"/analysis-*.md >/dev/null 2>&1; then
+    ok "analysis-*.md создан"
+  else
+    fail "analysis-*.md отсутствует"
+    return 1
+  fi
+}
+
 # ── Phase 5.2: research multi-language with LLM translation ────────────
 phase5_2() {
   step "Phase 5.2 — research --languages ru,en (translation через Gemini)"
@@ -305,7 +394,9 @@ menu() {
 Usage: scripts/qa.sh <phase>
 
   phase4         — реальный batch на YouTube (subtitles, без API ключей)
-  phase5.1       — research --languages en (нужен GEMINI_API_KEY)
+  phase5.1       — research --languages en --days 365 (SP exact preset, fast path)
+  phase5.1b      — research --days 14 (SP rounded UP + client refine)
+  phase5.1c      — research --since (explicit date → days_hint → SP)
   phase5.2       — research --languages ru,en + LLM translation
   phase5.3a      — subscribes add + list (нужна сеть для resolve)
   phase5.3b      — subscribes update first run + incremental
@@ -322,6 +413,8 @@ EOF
 case "${1:-}" in
   phase4)    phase4 ;;
   phase5.1)  phase5_1 ;;
+  phase5.1b) phase5_1b ;;
+  phase5.1c) phase5_1c ;;
   phase5.2)  phase5_2 ;;
   phase5.3a) phase5_3a ;;
   phase5.3b) phase5_3b ;;
