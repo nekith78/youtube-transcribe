@@ -1272,6 +1272,10 @@ def config_wizard() -> None:
 from skills.youtube_transcribe.detection.triggers_cli import triggers_cli
 cli.add_command(triggers_cli)
 
+# === v0.7: history command group ===
+from skills.youtube_transcribe.history.cli import history_group
+cli.add_command(history_group)
+
 
 @cli.command(name="webui")
 @click.option("--host", default="127.0.0.1", show_default=True,
@@ -1604,6 +1608,7 @@ def analyze_cmd(
 __all__ = [
     "cli", "transcribe_cmd", "batch_cmd", "config",
     "webui_cmd", "summarize_cmd", "analyze_cmd",
+    "history_group",
 ]
 
 
