@@ -93,10 +93,14 @@ phase5_1() {
   require_key "GEMINI_API_KEY" || return 1
 
   rm -rf "$QA_DIR/r-en"
-  $YT research "Claude AI features" \
-    --languages en --days 30 --limit 3 \
+  # Wider window (90d) + an actively-uploaded topic — "Claude AI features"
+  # with 30d sometimes returns 3 popular but old videos that get filtered
+  # out, leaving an empty pipeline. 90d ensures we have something fresh
+  # enough to actually run analyze on.
+  $YT research "AI agents tutorial 2026" \
+    --languages en --days 90 --limit 3 \
     --backend subtitles \
-    --prompt "Bullet-point key features mentioned across videos." \
+    --prompt "Bullet-point the main concepts mentioned across videos." \
     --analyze-backend gemini \
     --yes \
     --output-dir "$QA_DIR/r-en"
@@ -110,9 +114,15 @@ phase5_1() {
 
   # Find batch dir (single subdir of r-en)
   local dir
-  dir=$(find "$QA_DIR/r-en" -maxdepth 1 -mindepth 1 -type d | head -1)
+  dir=$(find "$QA_DIR/r-en" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)
   if [[ -z "$dir" ]]; then
     fail "batch folder не найден внутри $QA_DIR/r-en"
+    note "Если pipeline сказал 'После фильтра по дате осталось 0' — это"
+    note "значит YouTube вернул только старые видео под этот запрос."
+    note "Попробуй вручную с другим query или большим --days:"
+    note "  $YT research \"твой запрос\" --languages en --days 180 --limit 5 \\"
+    note "    --backend subtitles --prompt \"...\" --analyze-backend gemini \\"
+    note "    --yes --output-dir $QA_DIR/r-en"
     return 1
   fi
   ok "batch folder: $(basename "$dir")"
