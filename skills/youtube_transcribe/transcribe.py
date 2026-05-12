@@ -1605,10 +1605,151 @@ def analyze_cmd(
     console.print(f"  [bold]{target}[/bold]")
 
 
+# === v0.7: research command ===
+@cli.command(name="research")
+@click.argument("query", required=False)
+@click.option("--prompt", "prompt_inline", default=None,
+              help="Analyze prompt (required unless --no-analyze).")
+@click.option("--prompt-file", "prompt_file", default=None,
+              type=click.Path(exists=True, path_type=Path),
+              help="Read analyze prompt from file. Mutex with --prompt.")
+@click.option("--languages", "languages_csv", default="ru,en",
+              show_default=True,
+              help="Comma-separated language codes for search.")
+@click.option("--translate-backend", "translate_backend_opt",
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]),
+              default=None,
+              help="LLM for query translation. Defaults to --analyze-backend.")
+@click.option("--days", "days_opt", type=int, default=30, show_default=True,
+              help="Window: last N days.")
+@click.option("--since", "since_opt", default=None,
+              help="Window start YYYY-MM-DD.")
+@click.option("--until", "until_opt", default=None,
+              help="Window end YYYY-MM-DD.")
+@click.option("--limit", "limit_opt", type=int, default=20, show_default=True,
+              help="Videos to take from top YouTube results per language.")
+@click.option("--match", "match_opt", default=None,
+              help="Case-insensitive substring filter on title.")
+@click.option("--filter", "filter_opt", default=None,
+              help="LLM pre-screening prompt.")
+@click.option("--filter-backend", "filter_backend_opt",
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]),
+              default="gemini", show_default=True)
+@click.option("--in-subscribes", is_flag=True, default=False,
+              help="Source = subscribes channels (RSS) instead of YouTube search.")
+@click.option("--group", "group_opt", default=None)
+@click.option("--yes", is_flag=True, default=False,
+              help="Skip TTY checkpoint.")
+@click.option("--no-analyze", is_flag=True, default=False,
+              help="Skip final analyze step.")
+@click.option("--analyze-backend", "analyze_backend_opt",
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]),
+              default="gemini", show_default=True)
+@click.option("--ollama-model", "ollama_model_opt", default=None)
+@click.option("--ollama-host", "ollama_host_opt", default=None)
+@click.option("--no-stdout", "no_stdout_opt", is_flag=True, default=False)
+@click.option("--output-dir", "output_dir_opt", default=None)
+@click.option("--batch-name", "batch_name_opt", default=None)
+@click.option("--backend", "backend_opt",
+              type=click.Choice(BACKEND_CHOICES), default=None)
+@click.option("--whisper-model",
+              type=click.Choice(["turbo", "large", "medium", "small", "distil"]),
+              default=None)
+@click.option("--language", "language_opt", default=None)
+@click.option("--no-shorts", "no_shorts_opt", is_flag=True, default=False)
+@click.option("--min-duration", "min_duration_opt", type=int, default=None)
+@click.option("--max-duration", "max_duration_opt", type=int, default=None)
+@click.option("--workers", "workers_opt", type=int, default=1, show_default=True)
+def research_cmd(
+    query, prompt_inline, prompt_file, languages_csv, translate_backend_opt,
+    days_opt, since_opt, until_opt, limit_opt, match_opt, filter_opt,
+    filter_backend_opt, in_subscribes, group_opt, yes, no_analyze,
+    analyze_backend_opt, ollama_model_opt, ollama_host_opt, no_stdout_opt,
+    output_dir_opt, batch_name_opt, **batch_passthrough,
+) -> None:
+    """Research a topic — search YouTube + transcribe + analyze."""
+    from datetime import date as _date
+    from skills.youtube_transcribe.research.pipeline import run_research
+
+    if not query and not in_subscribes:
+        console.print("[red]Нужен QUERY (или --in-subscribes).[/red]")
+        sys.exit(2)
+
+    if not no_analyze:
+        if bool(prompt_inline) == bool(prompt_file):
+            console.print(
+                "[red]При analyze on — нужен ровно один из[/red] "
+                "--prompt / --prompt-file."
+            )
+            sys.exit(2)
+
+    since_d = _date.fromisoformat(since_opt) if since_opt else None
+    until_d = _date.fromisoformat(until_opt) if until_opt else None
+    days_arg = days_opt if (since_d is None and until_d is None) else None
+
+    languages = [s.strip() for s in languages_csv.split(",") if s.strip()]
+    translate_backend = translate_backend_opt or analyze_backend_opt
+
+    api_keys = {
+        "gemini": get_api_key("gemini"),
+        "anthropic": get_api_key("anthropic"),
+        "openai": get_api_key("openai"),
+        "ollama": None,
+    }
+
+    cfg = load_config(CONFIG_PATH) if CONFIG_PATH.exists() else None
+    output_dir = output_dir_opt or (cfg.output_dir if cfg else "./transcripts")
+    batch_name = batch_name_opt or _research_batch_name(query)
+    batch_opts = {k: v for k, v in batch_passthrough.items() if v is not None}
+    batch_opts.setdefault("no_combined", False)
+    batch_opts.setdefault("fail_fast", False)
+
+    try:
+        run_research(
+            query=query,
+            queries_by_language=None,
+            languages=languages,
+            days=days_arg, since=since_d, until=until_d,
+            limit=limit_opt,
+            match=match_opt, filter_text=filter_opt,
+            in_subscribes=in_subscribes, group=group_opt,
+            yes=yes, no_analyze=no_analyze,
+            prompt=prompt_inline, prompt_file=prompt_file,
+            analyze_backend=analyze_backend_opt,
+            filter_backend=filter_backend_opt,
+            translate_backend=translate_backend,
+            ollama_model=ollama_model_opt or "llama3.2:3b",
+            ollama_host=ollama_host_opt or "http://localhost:11434",
+            no_stdout=no_stdout_opt,
+            output_dir=output_dir,
+            batch_name=batch_name,
+            api_keys=api_keys,
+            batch_opts=batch_opts,
+        )
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(2)
+
+
+def _research_batch_name(query: str | None) -> str:
+    """Generate batch name: research_<ts>_<slug>."""
+    ts = datetime.now().strftime("%Y-%m-%d-%H%M")
+    if not query:
+        return f"research_{ts}"
+    slug = "".join(c if c.isalnum() else "-" for c in query.lower())
+    slug = "-".join(p for p in slug.split("-") if p)[:30].rstrip("-")
+    return f"research_{ts}_{slug or 'topic'}"
+
+
+# === v0.7: subscribes command group ===
+from skills.youtube_transcribe.subscribes.cli import subscribes_group
+cli.add_command(subscribes_group)
+
+
 __all__ = [
     "cli", "transcribe_cmd", "batch_cmd", "config",
     "webui_cmd", "summarize_cmd", "analyze_cmd",
-    "history_group",
+    "history_group", "research_cmd", "subscribes_group",
 ]
 
 
