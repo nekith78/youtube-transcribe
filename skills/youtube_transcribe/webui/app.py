@@ -170,61 +170,68 @@ def build_ui():
             "Universal audio/video transcription — YouTube, Instagram, "
             "TikTok, Vimeo, local files."
         )
-        with gr.Row():
-            with gr.Column(scale=2):
-                url = gr.Textbox(
-                    label="URL or local file path",
-                    placeholder="https://youtu.be/... or /path/to/audio.mp3",
-                )
+        with gr.Tabs():
+            # === Tab 1: Transcribe (single video / file) — v0.5 ===
+            with gr.Tab("Transcribe"):
                 with gr.Row():
-                    preset = gr.Dropdown(
-                        choices=list_preset_names(),
-                        value="smart",
-                        label="Preset",
-                    )
-                    backend = gr.Dropdown(
-                        choices=BACKEND_CHOICES, value="(default)",
-                        label="Transcribe backend (override)",
-                    )
-                with gr.Accordion("Visual mode", open=False):
-                    with_visuals = gr.Checkbox(label="Enable visuals (Gemini)")
-                    detect_method = gr.Dropdown(
-                        choices=DETECT_CHOICES, value="(preset default)",
-                        label="Detection method",
-                    )
-                    max_windows = gr.Slider(
-                        minimum=0, maximum=50, value=20, step=1,
-                        label="Max visual windows per video",
-                    )
-                with gr.Accordion("Quality", open=False):
-                    correct_asr = gr.Checkbox(
-                        label="Run ASR error correction on low-quality transcripts",
-                    )
-                run_btn = gr.Button("Transcribe", variant="primary")
-            with gr.Column(scale=3):
-                with gr.Tabs():
-                    with gr.TabItem("Transcript"):
-                        transcript_out = gr.Textbox(
-                            label="Transcript", lines=18,
+                    with gr.Column(scale=2):
+                        url = gr.Textbox(
+                            label="URL or local file path",
+                            placeholder="https://youtu.be/... or /path/to/audio.mp3",
                         )
-                    with gr.TabItem("Visual moments"):
-                        visual_out = gr.Markdown(label="Visual moments")
-                    with gr.TabItem("Quality"):
-                        quality_out = gr.Markdown(label="Quality breakdown")
-                output_dir = gr.Textbox(
-                    label="Output directory (system temp)",
-                    interactive=False,
+                        with gr.Row():
+                            preset = gr.Dropdown(
+                                choices=list_preset_names(),
+                                value="smart",
+                                label="Preset",
+                            )
+                            backend = gr.Dropdown(
+                                choices=BACKEND_CHOICES, value="(default)",
+                                label="Transcribe backend (override)",
+                            )
+                        with gr.Accordion("Visual mode", open=False):
+                            with_visuals = gr.Checkbox(label="Enable visuals (Gemini)")
+                            detect_method = gr.Dropdown(
+                                choices=DETECT_CHOICES, value="(preset default)",
+                                label="Detection method",
+                            )
+                            max_windows = gr.Slider(
+                                minimum=0, maximum=50, value=20, step=1,
+                                label="Max visual windows per video",
+                            )
+                        with gr.Accordion("Quality", open=False):
+                            correct_asr = gr.Checkbox(
+                                label="Run ASR error correction on low-quality transcripts",
+                            )
+                        run_btn = gr.Button("Transcribe", variant="primary")
+                    with gr.Column(scale=3):
+                        with gr.Tabs():
+                            with gr.TabItem("Transcript"):
+                                transcript_out = gr.Textbox(
+                                    label="Transcript", lines=18,
+                                )
+                            with gr.TabItem("Visual moments"):
+                                visual_out = gr.Markdown(label="Visual moments")
+                            with gr.TabItem("Quality"):
+                                quality_out = gr.Markdown(label="Quality breakdown")
+                        output_dir = gr.Textbox(
+                            label="Output directory (system temp)",
+                            interactive=False,
+                        )
+
+                run_btn.click(
+                    _run_one,
+                    inputs=[
+                        url, preset, backend,
+                        with_visuals, detect_method, max_windows,
+                        correct_asr,
+                    ],
+                    outputs=[transcript_out, visual_out, quality_out, output_dir],
                 )
 
-        run_btn.click(
-            _run_one,
-            inputs=[
-                url, preset, backend,
-                with_visuals, detect_method, max_windows,
-                correct_asr,
-            ],
-            outputs=[transcript_out, visual_out, quality_out, output_dir],
-        )
+            # === Tabs 2-3: Research + Subscribes — v0.7 ===
+            build_research_tab(gr)
+            build_subscribes_tab(gr)
 
     return demo
 
