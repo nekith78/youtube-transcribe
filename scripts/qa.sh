@@ -367,9 +367,12 @@ phase5_4() {
   $YT history list --last 5
   ok "history list работает"
 
-  # Pick newest id from history list output
+  # Pick newest id straight from history.toml — Rich truncates the table
+  # column with an ellipsis ("research_2026…") so we can't parse the CLI
+  # output reliably without forcing a wide terminal.
   local run_id
-  run_id=$($YT history list --last 1 2>&1 | grep -E "^│ (research|subscribes)_" | head -1 | awk '{print $2}')
+  run_id=$(grep -oE 'id = "[^"]+"' ~/.youtube-transcribe/history.toml 2>/dev/null \
+           | tail -1 | sed -E 's/^id = "(.*)"$/\1/')
   if [[ -n "$run_id" ]]; then
     echo
     $YT history show "$run_id"
