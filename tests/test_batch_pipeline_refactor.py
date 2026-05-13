@@ -25,7 +25,7 @@ def test_run_batch_pipeline_empty_targets_returns_none(tmp_path):
         default_backend="subtitles", language="auto",
         output_dir=str(tmp_path), keep_audio=False,
         timestamps=True, srt=True, fast_path_enabled=True,
-        cookies_browser=None,
+        cookies_file=None,
     )
     out = _run_batch_pipeline(targets=[], cfg=cfg, opts={})
     assert out is None
@@ -45,7 +45,7 @@ def test_run_batch_pipeline_returns_batch_dir(tmp_path):
         default_backend="subtitles", language="auto",
         output_dir=str(tmp_path), keep_audio=False,
         timestamps=True, srt=True, fast_path_enabled=True,
-        cookies_browser=None,
+        cookies_file=None,
     )
     fake_result = MagicMock(
         text="hello", segments=[], language_detected="en",

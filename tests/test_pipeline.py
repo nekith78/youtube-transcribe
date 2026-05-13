@@ -25,7 +25,7 @@ def test_run_pipeline_local_file_invokes_backend(tmp_path):
     )
     target = _make_target(url=str(audio), source="single", video_id=None)
     cfg = MagicMock(default_backend="whisper-local", language="en",
-                    yt_dlp_auto_update=False, cookies_browser="",
+                    yt_dlp_auto_update=False, cookies_file="",
                     fast_path_enabled=True, keep_audio=False)
 
     with patch("skills.youtube_transcribe.pipeline.build_backend",
@@ -44,7 +44,7 @@ def test_run_pipeline_url_with_subtitles_skips_download(tmp_path):
     )
     target = _make_target()
     cfg = MagicMock(default_backend="subtitles", language="en",
-                    yt_dlp_auto_update=False, cookies_browser="",
+                    yt_dlp_auto_update=False, cookies_file="",
                     fast_path_enabled=True, keep_audio=False)
 
     with patch("skills.youtube_transcribe.pipeline.build_backend",
@@ -64,7 +64,7 @@ def test_run_pipeline_url_with_whisper_local_downloads_to_temp(tmp_path):
     )
     target = _make_target()
     cfg = MagicMock(default_backend="whisper-local", language="en",
-                    yt_dlp_auto_update=False, cookies_browser="",
+                    yt_dlp_auto_update=False, cookies_file="",
                     fast_path_enabled=True, keep_audio=False)
 
     fake_audio = tmp_path / "audio.mp3"
@@ -85,7 +85,7 @@ def test_run_pipeline_propagates_backend_not_configured(tmp_path):
     fake_audio.write_bytes(b"x")
     target = _make_target()
     cfg = MagicMock(default_backend="gemini", language="en",
-                    yt_dlp_auto_update=False, cookies_browser="",
+                    yt_dlp_auto_update=False, cookies_file="",
                     fast_path_enabled=True, keep_audio=False)
     with patch("skills.youtube_transcribe.pipeline.build_backend",
                side_effect=BackendNotConfigured("GEMINI_API_KEY missing")), \

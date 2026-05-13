@@ -44,7 +44,7 @@ Key flags (full list via `--help`):
 - `--whisper-model {turbo,large,medium,small,distil}`
 - `--language <code>` (else auto-detect)
 - `--preset {eco,smart,standard,premium}` — bundle of (backend, vision, detection)
-- `--cookies-from-browser {chrome,firefox,edge,safari}` — Instagram needs this
+- `--cookies-file <path>` — Netscape cookies.txt. Required for IG (sign-in-only), useful for YouTube age-restricted / members-only. We deliberately do NOT support `--cookies-from-browser` — it pulls the entire browser cookie store into memory. Export the cookies you want via the "Get cookies.txt LOCALLY" extension (Chrome / Firefox / Edge / Brave / etc.) and pass the file path
 - `--with-visuals` / `--vision-backend {off,gemini}` — visual moments
 - `--correct-asr` (+ `--correct-asr-backend`) — LLM post-fix
 - `--diarize` — pyannote speaker labels
@@ -327,7 +327,7 @@ Failed video_ids stay in `errors.log` of each batch dir. Re-fetch them via
 
 | Command | YouTube | Instagram | TikTok | Other yt-dlp sites | Local files |
 |---|---|---|---|---|---|
-| `transcribe <URL>` / `batch <URL>` | ✓ | ✓ (needs `--cookies-from-browser`) | ✓ | ✓ | ✓ |
+| `transcribe <URL>` / `batch <URL>` | ✓ | ✓ (needs `--cookies-file`) | ✓ | ✓ | ✓ |
 | `research "query"` | ✓ | ✗ | ✗ | ✗ | n/a |
 | `subscribes` | ✓ | ✗ (v0.8 candidate) | ✗ (v0.8 candidate) | ✗ | n/a |
 

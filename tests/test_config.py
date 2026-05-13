@@ -44,7 +44,7 @@ def test_save_and_load_roundtrip(tmp_path: Path):
         output_dir="./transcripts",
         keep_audio=False,
         yt_dlp_auto_update=True,
-        cookies_browser="",
+        cookies_file="",
         fast_path_enabled=True,
     )
     save_config(cfg, cfg_path)

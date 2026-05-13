@@ -57,7 +57,13 @@ class Config:
 
     keep_audio: bool = False
     yt_dlp_auto_update: bool = True
-    cookies_browser: str = ""
+    # Path to a Netscape cookies.txt file used by yt-dlp for YouTube
+    # downloads that require sign-in (age-restricted, member-only, etc.).
+    # By design we DO NOT support `--cookies-from-browser` — that flag
+    # pulls every cookie from your browser into the process. Export only
+    # the cookies you want via an extension like "Get cookies.txt LOCALLY"
+    # and register the file with `youtube-transcribe config set-key …`.
+    cookies_file: str = ""
     fast_path_enabled: bool = True
 
     # === v0.7+ analyze defaults ===
@@ -125,7 +131,7 @@ def _to_toml_dict(cfg: Config) -> dict:
         "behavior": {
             "keep_audio": d["keep_audio"],
             "yt_dlp_auto_update": d["yt_dlp_auto_update"],
-            "cookies_browser": d["cookies_browser"],
+            "cookies_file": d["cookies_file"],
             "fast_path_enabled": d["fast_path_enabled"],
         },
         "analyze": {
@@ -169,7 +175,9 @@ def _from_toml_dict(d: dict) -> Config:
         output_dir=out.get("output_dir", DEFAULT_CONFIG.output_dir),
         keep_audio=beh.get("keep_audio", DEFAULT_CONFIG.keep_audio),
         yt_dlp_auto_update=beh.get("yt_dlp_auto_update", DEFAULT_CONFIG.yt_dlp_auto_update),
-        cookies_browser=beh.get("cookies_browser", DEFAULT_CONFIG.cookies_browser),
+        # Backward-compat: pre-v0.8 configs may still have `cookies_browser`
+        # — silently drop it (we no longer support `--cookies-from-browser`).
+        cookies_file=beh.get("cookies_file", DEFAULT_CONFIG.cookies_file),
         fast_path_enabled=beh.get("fast_path_enabled", DEFAULT_CONFIG.fast_path_enabled),
         # Empty string in TOML means "not chosen yet" — preserve None semantics.
         analyze_backend=raw_analyze_backend if raw_analyze_backend else None,

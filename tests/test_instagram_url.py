@@ -59,13 +59,17 @@ def test_youtube_and_instagram_dont_overlap():
 
 
 def test_diagnose_instagram_login_error():
-    """Instagram-specific errors get a tailored hint."""
+    """Instagram-specific errors get a tailored hint pointing at the
+    cookies-file workflow (we don't recommend --cookies-from-browser)."""
     msg = _diagnose_ytdlp_error(
         "ERROR: [Instagram] Login required to access this content. "
         "Use --cookies."
     )
     assert "Instagram" in msg
-    assert "cookies-from-browser" in msg
+    assert "cookies" in msg.lower()
+    assert "subscribes cookies set" in msg
+    # Hint must NOT push the user toward --cookies-from-browser.
+    assert "cookies-from-browser" not in msg
 
 
 def test_diagnose_instagram_rate_limit():

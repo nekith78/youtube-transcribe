@@ -2,6 +2,7 @@
 The `batch` sub-command is added in Task 20B (registered into the same `cli` group)."""
 from __future__ import annotations
 
+import os
 import re
 import sys
 from datetime import datetime
@@ -116,8 +117,11 @@ def cli() -> None:
 @click.option("--timestamps/--no-timestamps", default=None)
 @click.option("--srt/--no-srt", default=None)
 @click.option("--keep-audio/--delete-audio", default=None)
-@click.option("--cookies-from-browser", "cookies_browser", default=None,
-              type=click.Choice(["", "chrome", "firefox", "edge", "safari"]))
+@click.option("--cookies-file", "cookies_file", default=None,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Netscape cookies.txt for sign-in-required videos. "
+                   "Export via 'Get cookies.txt LOCALLY' extension (any browser). "
+                   "We deliberately do NOT support --cookies-from-browser.")
 @click.option("--no-fast-path", is_flag=True, help="Disable subtitles fast-path in smart mode.")
 @click.option("--device", default=None)
 @click.option("--compute-type", default=None)
@@ -284,7 +288,7 @@ def transcribe_cmd(audio_or_url: str, **opts) -> None:
             try:
                 video_path = download_video(
                     target.url, Path(visual_tmp),
-                    cookies_browser=cfg.cookies_browser,
+                    cookies_file=cfg.cookies_file,
                 )
             except Exception as e:
                 console.print(f"[yellow]⚠ Визуал отключён — не удалось скачать mp4:[/yellow] {e}",
@@ -408,7 +412,7 @@ def _override_config(cfg: Config, opts: dict) -> Config:
     if opts.get("compute_type"): cfg.whisper_compute_type = opts["compute_type"]
     if opts.get("beam_size"): cfg.beam_size = opts["beam_size"]
     if opts.get("vad") is not None: cfg.vad = opts["vad"]
-    if opts.get("cookies_browser") is not None: cfg.cookies_browser = opts["cookies_browser"]
+    if opts.get("cookies_file") is not None: cfg.cookies_file = opts["cookies_file"]
     if opts.get("keep_audio") is not None: cfg.keep_audio = opts["keep_audio"]
     return cfg
 
@@ -468,7 +472,7 @@ def _diagnose_failure_hint(stage: str, error_text: str) -> str | None:
     """Map common errors to actionable user hints."""
     s = error_text.lower()
     if stage == "download" and ("403" in s or "bot" in s or "sign in" in s):
-        return "try --cookies-from-browser chrome"
+        return "register a cookies.txt: yt-tr config set-cookies <path>"
     if stage == "backend" and "api_key" in s.replace(" ", ""):
         return "youtube-transcribe config set-key <backend>"
     return None
@@ -763,7 +767,7 @@ def _run_batch_pipeline(
                 try:
                     v_path = download_video(
                         target.url, Path(v_tmp),
-                        cookies_browser=cfg.cookies_browser,
+                        cookies_file=cfg.cookies_file,
                     )
                 except Exception as e:
                     console.print(
@@ -1003,8 +1007,11 @@ def _run_batch_pipeline(
 @click.option("--timestamps/--no-timestamps", default=None)
 @click.option("--srt/--no-srt", default=None)
 @click.option("--keep-audio/--delete-audio", default=None)
-@click.option("--cookies-from-browser", "cookies_browser", default=None,
-              type=click.Choice(["", "chrome", "firefox", "edge", "safari"]))
+@click.option("--cookies-file", "cookies_file", default=None,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Netscape cookies.txt for sign-in-required videos. "
+                   "Export via 'Get cookies.txt LOCALLY' (any browser). "
+                   "We deliberately do NOT support --cookies-from-browser.")
 @click.option("--no-fast-path", is_flag=True)
 @click.option("--device", default=None)
 @click.option("--compute-type", default=None)
@@ -1292,7 +1299,7 @@ _SET_KEY_TO_FIELD: dict[str, str] = {
     "assemblyai-model": "assemblyai_model",
     "language": "language",
     "output-dir": "output_dir",
-    "cookies-browser": "cookies_browser",
+    "cookies-file": "cookies_file",
     "custom.base_url": "custom_base_url",
     "custom.model": "custom_model",
 }
@@ -1334,6 +1341,39 @@ def config_set_key(backend: str) -> None:
         return
     set_api_key(backend, key, env_path=ENV_PATH)
     console.print(f"[green]✓[/green] {backend} key saved to {ENV_PATH} ({mask_key(key)})")
+
+
+@config.command("set-cookies")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False))
+def config_set_cookies(path: str) -> None:
+    """Register a Netscape cookies.txt for YouTube sign-in-required downloads.
+
+    Use this when YouTube rejects anonymous requests for a video (age
+    restriction, "sign in to confirm you're not a bot", members-only, etc.).
+    Export your cookies via the "Get cookies.txt LOCALLY" extension and
+    pass the file PATH here. The file is copied to
+    `~/.youtube-transcribe/youtube-cookies.txt` with mode 0600 and the path
+    is saved in config.toml.
+
+    For Instagram / TikTok cookies use `yt-tr subscribes cookies set <platform> <path>`.
+    """
+    from pathlib import Path as _P
+    src = _P(path).expanduser().resolve()
+    dest = ENV_PATH.parent / "youtube-cookies.txt"
+    dest.write_bytes(src.read_bytes())
+    if os.name != "nt":
+        try:
+            os.chmod(dest, 0o600)
+        except OSError:
+            pass
+    cfg = load_config(CONFIG_PATH) if CONFIG_PATH.exists() else Config()
+    cfg.cookies_file = str(dest)
+    save_config(cfg, CONFIG_PATH)
+    console.print(
+        f"[green]✓[/green] cookies registered: [bold]{dest}[/bold] (mode 0600)\n"
+        f"[dim]Override per-call with --cookies-file <other-path>. "
+        f"If yt-dlp later says 'sign in required', re-export and run set-cookies again.[/dim]"
+    )
 
 
 @config.command("test")

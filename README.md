@@ -466,9 +466,19 @@ youtube-transcribe config wizard               # перезапустить ма
 YouTube периодически обновляет защиту от ботов, ломая yt-dlp на 1–3 месяца подряд по всему миру. **Это не баг этого инструмента.** Исправление:
 
 1. `youtube-transcribe update-deps` — обновляет yt-dlp до последнего релиза.
-2. Если не помогло: `youtube-transcribe transcribe <URL> --cookies-from-browser chrome`
-   (также: `firefox`, `edge`, `safari`).
+2. Если не помогло — зарегистрируй cookies-файл:
+   ```bash
+   # Поставь расширение "Get cookies.txt LOCALLY" в любом браузере
+   # (Chrome / Firefox / Edge / Brave — формат стандартный, Netscape cookies.txt).
+   # Открой youtube.com (залогиненный) → жми расширение → Export.
+
+   youtube-transcribe config set-cookies ~/Downloads/youtube_cookies.txt
+   ```
+   После этого `transcribe` / `batch` сами подхватят cookies. Можно и
+   per-call: `youtube-transcribe transcribe <URL> --cookies-file ~/path/file.txt`.
 3. Если всё ещё не работает — открой issue, обычно фикс появляется за несколько дней.
+
+> **Почему не `--cookies-from-browser`?** Тот флаг yt-dlp пулит ВСЕ cookies со ВСЕХ доменов из браузерного хранилища в память процесса (фильтрация по домену происходит только при отправке HTTP). Это нарушает principle of least privilege. Мы поддерживаем ТОЛЬКО explicit cookies.txt файл.
 
 > **Контекст:** YouTube регулярно усиливает защиту. Возможно, понадобится PO Token plugin (`bgutil-ytdlp-pot-provider`) — следи за [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases).
 

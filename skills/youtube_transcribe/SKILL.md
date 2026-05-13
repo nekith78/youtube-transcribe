@@ -211,7 +211,7 @@ This writes to `~/.youtube-transcribe/config.toml` and affects all future sessio
 | `research "query"` | ✓ | ✗ | ✗ | ✗ | n/a |
 | `subscribes` | ✓ | ✗ (roadmap) | ✗ (roadmap) | ✗ | n/a |
 
-- **Instagram** requires `--cookies-from-browser chrome` (or firefox/edge/safari) —
+- **Instagram** requires cookies (register a `cookies.txt` via `yt-tr subscribes cookies set instagram <path>`) —
   IG blocks anonymous requests. Mention this if a user tries an IG URL without cookies.
 - **Research** is YouTube-only because `yt-dlp ytsearchN:` only supports YouTube;
   IG/TikTok search via API would require auth tokens.

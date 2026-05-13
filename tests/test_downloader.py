@@ -47,7 +47,7 @@ def test_build_ytdlp_command_basic(tmp_path: Path):
     cmd = build_ytdlp_command(
         url="https://youtu.be/abc",
         output_template=str(tmp_path / "audio.%(ext)s"),
-        cookies_browser="",
+        cookies_file="",
     )
     assert "yt-dlp" in cmd[0]
     assert "-x" in cmd
@@ -58,13 +58,18 @@ def test_build_ytdlp_command_basic(tmp_path: Path):
 
 
 def test_build_ytdlp_command_with_cookies(tmp_path: Path):
+    """Cookies file (Netscape format) → --cookies <path>. We deliberately
+    DO NOT support --cookies-from-browser — see project memory rule
+    feedback_cookies_strict_file_only.md."""
     cmd = build_ytdlp_command(
         url="https://youtu.be/abc",
         output_template=str(tmp_path / "audio.%(ext)s"),
-        cookies_browser="chrome",
+        cookies_file="/tmp/c.txt",
     )
-    assert "--cookies-from-browser" in cmd
-    assert "chrome" in cmd
+    assert "--cookies" in cmd
+    assert "/tmp/c.txt" in cmd
+    # Sanity guard: must NOT smuggle --cookies-from-browser back in.
+    assert "--cookies-from-browser" not in cmd
 
 
 # ---------------------------------------------------------------------------

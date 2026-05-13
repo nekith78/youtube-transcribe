@@ -72,7 +72,7 @@ def run_pipeline(
     with _audio_workdir(keep_audio=cfg.keep_audio, persist_to=keep_audio_to) as tmp:
         audio_path = download_audio(
             target.url, tmp,
-            cookies_browser=cfg.cookies_browser,
+            cookies_file=cfg.cookies_file,
         )
         return _transcribe_one(backend_name, audio_path, cfg, language=cfg.language)
 

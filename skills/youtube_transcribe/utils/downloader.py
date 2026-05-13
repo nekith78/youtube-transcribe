@@ -56,7 +56,7 @@ def build_ytdlp_command(
     *,
     url: str,
     output_template: str,
-    cookies_browser: str = "",
+    cookies_file: str = "",
     audio_format: str = "mp3",
 ) -> list[str]:
     cmd = [
@@ -68,8 +68,10 @@ def build_ytdlp_command(
         "--no-playlist",
         "-o", output_template,
     ]
-    if cookies_browser:
-        cmd += ["--cookies-from-browser", cookies_browser]
+    if cookies_file:
+        # Explicit Netscape cookies.txt path — NEVER --cookies-from-browser.
+        # See project memory: feedback_cookies_strict_file_only.md
+        cmd += ["--cookies", cookies_file]
     cmd.append(url)
     return cmd
 
@@ -125,18 +127,18 @@ def _diagnose_ytdlp_error(stderr: str) -> str:
         "login" in s or "session" in s or "logged" in s or "rate-limit" in s
     ):
         return (
-            "Instagram требует залогиненную сессию. Передай "
-            "--cookies-from-browser chrome (или firefox/edge/safari). "
+            "Instagram требует залогиненную сессию. Зарегистрируй cookies-файл:\n"
+            "  yt-tr subscribes cookies set instagram <path-to-cookies.txt>\n"
             "Stories и приватные аккаунты — только с cookies того, кто на них подписан."
         )
     if "sign in to confirm you" in s or "bot" in s or "403" in s:
-        return ("YouTube заблокировал запрос как бот. Попробуй: "
-                "--cookies-from-browser chrome (или firefox/edge). "
+        return ("YouTube заблокировал запрос как бот. Зарегистрируй cookies-файл:\n"
+                "  yt-tr config set-cookies <path-to-cookies.txt>\n"
                 "Также может помочь обновить yt-dlp: youtube-transcribe update-deps.")
     if "video is private" in s or "members-only" in s:
         return "Видео приватное или только для подписчиков. Нужны cookies залогиненного аккаунта."
     if "age" in s and "restrict" in s:
-        return "Видео с возрастным ограничением. Используй --cookies-from-browser."
+        return "Видео с возрастным ограничением. Передай --cookies-file <path>."
     if "country" in s or "geo" in s:
         return "Видео заблокировано в твоём регионе. Попробуй VPN или другой регион."
     if "unable to download" in s and "requested format" in s:
@@ -148,10 +150,15 @@ def download_audio(
     url: str,
     output_dir: Path,
     *,
-    cookies_browser: str = "",
+    cookies_file: str = "",
     timeout_seconds: int = 600,
 ) -> Path:
-    """Download audio from URL via yt-dlp. Returns path to the audio file."""
+    """Download audio from URL via yt-dlp. Returns path to the audio file.
+
+    `cookies_file` (Netscape cookies.txt) is the ONLY supported way to pass
+    auth. The skill never uses `--cookies-from-browser` — see project memory
+    file `feedback_cookies_strict_file_only.md`.
+    """
     if shutil.which("yt-dlp") is None:
         raise DownloadError("yt-dlp не найден в PATH. Установи через `uv sync` или `pip install yt-dlp`.")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -159,7 +166,7 @@ def download_audio(
     cmd = build_ytdlp_command(
         url=url,
         output_template=template,
-        cookies_browser=cookies_browser,
+        cookies_file=cookies_file,
     )
 
     try:
@@ -184,13 +191,14 @@ def download_video(
     url: str,
     output_dir: Path,
     *,
-    cookies_browser: str = "",
+    cookies_file: str = "",
     timeout_seconds: int = 1200,
 ) -> Path:
     """Download mp4 (audio+video) from URL via yt-dlp. Returns path to the mp4 file.
 
     Used by visual mode (--with-visuals) — Gemini multimodal needs both video frames
-    and audio.
+    and audio. `cookies_file` is the only supported auth mechanism; see
+    `download_audio` for the rationale.
     """
     if shutil.which("yt-dlp") is None:
         raise DownloadError("yt-dlp не найден в PATH.")
@@ -206,8 +214,8 @@ def download_video(
         "--no-playlist",
         "-o", template,
     ]
-    if cookies_browser:
-        cmd += ["--cookies-from-browser", cookies_browser]
+    if cookies_file:
+        cmd += ["--cookies", cookies_file]
     cmd.append(url)
 
     try:

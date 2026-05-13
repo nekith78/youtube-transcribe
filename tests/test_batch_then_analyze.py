@@ -272,7 +272,7 @@ def test_download_error_becomes_batch_failure_not_traceback(tmp_path: Path):
     cfg = Config(
         default_backend="subtitles",
         output_dir=str(tmp_path),
-        cookies_browser="",
+        cookies_file="",
         keep_audio=False,
         timestamps=True,
         srt=True,
