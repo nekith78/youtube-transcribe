@@ -146,15 +146,17 @@ def test_wizard_non_tty_returns_false(tmp_path: Path):
 
 
 def test_wizard_full_flow_persists_to_config(tmp_path: Path):
-    """TTY path: prompts for platform (if missing) + path, then persists."""
+    """TTY path: platform prompt (click) + path prompt (questionary)."""
     from unittest.mock import patch
     from skills.youtube_transcribe.subscribes import cookies_onboarding as mod
     cfg = tmp_path / "config.toml"
     src = _make_cookies_file(tmp_path / "ig.txt")
 
-    # platform was not provided — first prompt picks "1" (instagram),
-    # second prompt picks the path.
-    with patch("click.prompt", side_effect=["1", str(src)]):
+    # Platform → click.prompt returns "1" (instagram).
+    # Path → our _prompt_for_path helper (questionary internally) returns the file.
+    with patch("click.prompt", return_value="1"), patch.object(
+        mod, "_prompt_for_path", return_value=str(src),
+    ):
         ok = mod.wizard(None, config_path=cfg, is_tty=True)
 
     assert ok is True
@@ -164,18 +166,22 @@ def test_wizard_full_flow_persists_to_config(tmp_path: Path):
 
 def test_wizard_with_platform_skips_first_prompt(tmp_path: Path):
     """If platform already known (called from `add` or `update`), wizard
-    asks only for the path — single prompt."""
+    skips the click.Choice prompt and asks only for the path."""
     from unittest.mock import patch
     from skills.youtube_transcribe.subscribes import cookies_onboarding as mod
     cfg = tmp_path / "config.toml"
     src = _make_cookies_file(tmp_path / "tt.txt")
 
-    with patch("click.prompt", side_effect=[str(src)]) as mock_prompt:
+    with patch("click.prompt") as mock_click, patch.object(
+        mod, "_prompt_for_path", return_value=str(src),
+    ) as mock_path:
         ok = mod.wizard("tiktok", config_path=cfg, is_tty=True)
 
     assert ok is True
-    # Exactly one prompt — for the path. Platform was passed in.
-    assert mock_prompt.call_count == 1
+    # No click.prompt — platform was passed in.
+    mock_click.assert_not_called()
+    # Single path prompt fired.
+    mock_path.assert_called_once()
 
 
 def test_wizard_invalid_file_returns_false(tmp_path: Path):
@@ -186,7 +192,7 @@ def test_wizard_invalid_file_returns_false(tmp_path: Path):
     bad = tmp_path / "garbage.txt"
     bad.write_text("not cookies", encoding="utf-8")
 
-    with patch("click.prompt", side_effect=[str(bad)]):
+    with patch.object(mod, "_prompt_for_path", return_value=str(bad)):
         ok = mod.wizard("instagram", config_path=cfg, is_tty=True)
 
     assert ok is False
@@ -194,6 +200,35 @@ def test_wizard_invalid_file_returns_false(tmp_path: Path):
     if cfg.exists():
         raw = tomllib.loads(cfg.read_text(encoding="utf-8"))
         assert not raw.get("instagram", {}).get("cookies_file")
+
+
+def test_wizard_cancel_returns_false(tmp_path: Path):
+    """Ctrl-C at the path prompt (questionary returns None) → wizard
+    returns False without crashing and without partially-saving state."""
+    from unittest.mock import patch
+    from skills.youtube_transcribe.subscribes import cookies_onboarding as mod
+    cfg = tmp_path / "config.toml"
+
+    with patch.object(mod, "_prompt_for_path", return_value=None):
+        ok = mod.wizard("instagram", config_path=cfg, is_tty=True)
+    assert ok is False
+
+
+def test_prompt_for_path_strips_backslash_escaped_spaces(tmp_path: Path):
+    """macOS Terminal escapes spaces with backslash on drag-and-drop;
+    helper should strip that so the path resolves correctly."""
+    from unittest.mock import patch
+    from skills.youtube_transcribe.subscribes.cookies_onboarding import (
+        _prompt_for_path,
+    )
+
+    # Simulate questionary returning an escaped path.
+    with patch("questionary.path") as mock_qpath:
+        mock_qpath.return_value.ask.return_value = (
+            "/Users/me/My\\ Folder/cookies.txt"
+        )
+        result = _prompt_for_path("Test")
+    assert result == "/Users/me/My Folder/cookies.txt"
 
 
 def test_cookies_set_cmd_no_args_invokes_wizard(tmp_path: Path):

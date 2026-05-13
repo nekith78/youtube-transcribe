@@ -39,6 +39,38 @@ _NETSCAPE_HEADER_LINES = (
 )
 
 
+def _prompt_for_path(label: str) -> str | None:
+    """Ask the user for a filesystem path. Cross-platform UX:
+
+      • questionary.path → Tab-autocomplete works on macOS / Linux
+        (GNOME Terminal, Konsole, Alacritty, Kitty, WezTerm) / Windows
+        Terminal. Internally uses prompt_toolkit which abstracts the
+        readline / libedit / pyreadline split.
+      • Drag-and-drop из файлового менеджера тоже работает — это
+        feature терминала на уровне OS, любой prompt-input её
+        получает как обычный текст.
+
+    Returns the (possibly tilde-/escape-cleaned) path, or None on
+    cancellation (Ctrl-C). Existence is validated by the CALLER via
+    `set_cookies_file` — we don't reject here so users see a clear
+    "файл не найден" message rather than `questionary`'s generic one.
+    """
+    try:
+        import questionary
+    except ImportError:
+        # Hard-dep — shouldn't fire. If it does, fall back to plain click.
+        import click as _click
+        result = _click.prompt(label, default="")
+        return result.strip() or None
+
+    raw = questionary.path(label + ":").ask()
+    if raw is None:
+        return None
+    # macOS Terminal escapes spaces with backslash on drag-and-drop:
+    # "/Users/me/My\ Folder/cookies.txt" → strip the escaping.
+    return raw.replace("\\ ", " ").strip()
+
+
 def wizard(
     platform: str | None = None,
     *,
@@ -81,11 +113,15 @@ def wizard(
         f"[dim]  2. Открой {platform}.com (залогиненный) → расширение → "
         "Export.[/dim]\n"
         "[dim]  3. Введи путь к скачанному файлу ниже.[/dim]\n"
+        "[dim]     Можно перетащить файл в терминал, либо набрать с "
+        "Tab-автодополнением[/dim]\n"
+        "[dim]     (работает на macOS / Linux GNOME Terminal/Konsole / "
+        "Windows Terminal).[/dim]\n"
     )
-    path = click.prompt(
-        "Путь к cookies.txt",
-        type=click.Path(exists=True, dir_okay=False),
-    )
+    path = _prompt_for_path("Путь к cookies.txt")
+    if not path:
+        _console.print("[yellow]Отменено.[/yellow]")
+        return False
 
     try:
         dest = set_cookies_file(platform, path, config_path=config_path)
