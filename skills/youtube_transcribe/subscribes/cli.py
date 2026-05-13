@@ -41,12 +41,20 @@ def subscribes_group() -> None:
 @click.option("--group", default=None,
               help="Optional group tag (e.g. 'ai-research').")
 def add_cmd(channel_url: str, group: str | None) -> None:
-    """Add a channel by URL or @handle."""
+    """Add a channel by URL. Platform is auto-detected from the URL."""
     try:
         resolved = resolve_channel(channel_url)
     except ValueError as e:
         _console.print(f"[red]Не удалось распознать канал:[/red] {e}")
         sys.exit(3)
+
+    # First IG/TikTok add triggers the cookies onboarding prompt; YouTube
+    # short-circuits to "" since RSS is public.
+    if resolved.platform in ("instagram", "tiktok"):
+        from skills.youtube_transcribe.subscribes.cookies_onboarding import (
+            resolve_cookies_browser,
+        )
+        resolve_cookies_browser(resolved.platform)
 
     channel = Channel(
         url=resolved.url,
@@ -54,11 +62,13 @@ def add_cmd(channel_url: str, group: str | None) -> None:
         channel_id=resolved.channel_id,
         group=group,
         added=date.today().isoformat(),
+        platform=resolved.platform,
     )
     add_channel(SUBSCRIBES_PATH, channel)
     _console.print(
         f"[green]✓[/green] Добавлен {resolved.handle or resolved.url} "
-        f"(channel_id={resolved.channel_id}, group={group or '—'})"
+        f"([cyan]{resolved.platform}[/cyan], "
+        f"id={resolved.channel_id}, group={group or '—'})"
     )
 
 

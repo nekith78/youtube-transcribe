@@ -16,6 +16,26 @@ def _resolved(url, channel_id="UC_abc"):
     )
 
 
+def _ig_resolved(url):
+    from skills.youtube_transcribe.subscribes.channel_resolver import (
+        ResolvedChannel,
+    )
+    return ResolvedChannel(
+        url=url.rstrip("/"), handle="@anthropic",
+        channel_id="anthropic", title=None, platform="instagram",
+    )
+
+
+def _tt_resolved(url):
+    from skills.youtube_transcribe.subscribes.channel_resolver import (
+        ResolvedChannel,
+    )
+    return ResolvedChannel(
+        url=url.rstrip("/"), handle="@duolingo",
+        channel_id="@duolingo", title=None, platform="tiktok",
+    )
+
+
 def test_subscribes_help():
     runner = CliRunner()
     res = runner.invoke(cli, ["subscribes", "--help"])
@@ -42,6 +62,75 @@ def test_add_persists_channel(tmp_path: Path):
     text = sub_path.read_text()
     assert "@A" in text
     assert "ai-research" in text
+
+
+def test_add_instagram_runs_cookies_onboarding(tmp_path: Path):
+    """First Instagram add triggers the cookies prompt resolver."""
+    sub_path = tmp_path / "subscribes.toml"
+    with patch(
+        "skills.youtube_transcribe.subscribes.cli.SUBSCRIBES_PATH",
+        new=sub_path,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.cli.resolve_channel",
+        return_value=_ig_resolved("https://www.instagram.com/anthropic"),
+    ), patch(
+        "skills.youtube_transcribe.subscribes.cookies_onboarding"
+        ".resolve_cookies_browser",
+        return_value="chrome",
+    ) as mock_cookies:
+        runner = CliRunner()
+        res = runner.invoke(cli, [
+            "subscribes", "add", "https://www.instagram.com/anthropic/",
+        ], catch_exceptions=False)
+    assert res.exit_code == 0
+    mock_cookies.assert_called_once_with("instagram")
+    text = sub_path.read_text()
+    assert "anthropic" in text
+    assert 'platform = "instagram"' in text
+
+
+def test_add_tiktok_runs_cookies_onboarding(tmp_path: Path):
+    sub_path = tmp_path / "subscribes.toml"
+    with patch(
+        "skills.youtube_transcribe.subscribes.cli.SUBSCRIBES_PATH",
+        new=sub_path,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.cli.resolve_channel",
+        return_value=_tt_resolved("https://www.tiktok.com/@duolingo"),
+    ), patch(
+        "skills.youtube_transcribe.subscribes.cookies_onboarding"
+        ".resolve_cookies_browser",
+        return_value="chrome",
+    ) as mock_cookies:
+        runner = CliRunner()
+        res = runner.invoke(cli, [
+            "subscribes", "add", "https://www.tiktok.com/@duolingo",
+        ], catch_exceptions=False)
+    assert res.exit_code == 0
+    mock_cookies.assert_called_once_with("tiktok")
+    text = sub_path.read_text()
+    assert 'platform = "tiktok"' in text
+
+
+def test_add_youtube_skips_cookies_onboarding(tmp_path: Path):
+    """YouTube uses public RSS — no cookies prompt on add."""
+    sub_path = tmp_path / "subscribes.toml"
+    with patch(
+        "skills.youtube_transcribe.subscribes.cli.SUBSCRIBES_PATH",
+        new=sub_path,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.cli.resolve_channel",
+        return_value=_resolved("https://www.youtube.com/@A"),
+    ), patch(
+        "skills.youtube_transcribe.subscribes.cookies_onboarding"
+        ".resolve_cookies_browser",
+        side_effect=AssertionError("must not call for YouTube"),
+    ):
+        runner = CliRunner()
+        res = runner.invoke(cli, [
+            "subscribes", "add", "https://www.youtube.com/@A",
+        ], catch_exceptions=False)
+    assert res.exit_code == 0
 
 
 def test_add_resolution_failure_exits_3(tmp_path: Path):

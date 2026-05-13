@@ -68,6 +68,15 @@ class Config:
     # do it), or one of {gemini, claude, openai, ollama}.
     analyze_backend: str | None = None
 
+    # === v0.8+ per-platform cookies for subscribes (IG/TikTok) ===
+    # Browser to source --cookies-from-browser from when scraping the
+    # corresponding platform. Asked on first `subscribes add` for that
+    # platform and persisted. Empty string = try anonymous (works for
+    # TikTok usually, fails on Instagram). Values: "", "chrome",
+    # "firefox", "edge", "safari".
+    instagram_cookies_browser: str = ""
+    tiktok_cookies_browser: str = ""
+
 
 DEFAULT_CONFIG = Config()
 
@@ -117,6 +126,12 @@ def _to_toml_dict(cfg: Config) -> dict:
         "analyze": {
             "backend": d["analyze_backend"] or "",
         },
+        "instagram": {
+            "cookies_browser": d["instagram_cookies_browser"],
+        },
+        "tiktok": {
+            "cookies_browser": d["tiktok_cookies_browser"],
+        },
     }
 
 
@@ -126,6 +141,8 @@ def _from_toml_dict(d: dict) -> Config:
     beh = d.get("behavior", {})
     analyze = d.get("analyze", {})
     raw_analyze_backend = analyze.get("backend", "")
+    ig = d.get("instagram", {})
+    tt = d.get("tiktok", {})
     return Config(
         default_backend=d.get("default_backend", DEFAULT_CONFIG.default_backend),
         fallback_backend=d.get("fallback_backend", DEFAULT_CONFIG.fallback_backend),
@@ -151,6 +168,8 @@ def _from_toml_dict(d: dict) -> Config:
         fast_path_enabled=beh.get("fast_path_enabled", DEFAULT_CONFIG.fast_path_enabled),
         # Empty string in TOML means "not chosen yet" — preserve None semantics.
         analyze_backend=raw_analyze_backend if raw_analyze_backend else None,
+        instagram_cookies_browser=ig.get("cookies_browser", ""),
+        tiktok_cookies_browser=tt.get("cookies_browser", ""),
     )
 
 
