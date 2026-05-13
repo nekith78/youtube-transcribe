@@ -19,18 +19,31 @@ Works as:
 
 ## Status
 
-v0.1 — production-ready core:
+v0.7 — production-ready:
 
-| Feature | State |
-|---|---|
-| 8 backends (subtitles, whisper-local, gemini, groq, openai, deepgram, assemblyai, custom) | Working |
-| Smart mode (subtitles fast-path → whisper-local fallback) | Working |
-| Batch / channel / playlist | Working |
-| First-run wizard with hardware auto-detect | Working |
-| CLI (`youtube-transcribe transcribe`, `batch`, `config`) | Working |
-| Slash command `/transcribe` | Working |
-| macOS Apple Silicon (mlx-whisper) | Tested manually on M-series |
-| Windows/Linux + NVIDIA (faster-whisper) | Working |
+| Feature | Since | State |
+|---|---|---|
+| 8 transcription backends (subtitles, whisper-local, gemini, groq, openai, deepgram, assemblyai, custom) | v0.1 | Working |
+| Smart preset (subtitles fast-path → whisper-local fallback + visual moments) | v0.1 / v0.2 | Working |
+| Batch / channel / playlist | v0.1 | Working |
+| First-run wizard with hardware auto-detect | v0.1 | Working |
+| CLI (`transcribe`, `batch`, `config`) | v0.1 | Working |
+| Slash command `/transcribe` | v0.1 | Working |
+| macOS Apple Silicon (mlx-whisper) | v0.1 | Working |
+| Windows/Linux + NVIDIA (faster-whisper) | v0.1 | Working |
+| Visual moments (vision-LLM annotation, keyframes, OCR) | v0.2 | Working |
+| Triggers (custom phrases drive visual analysis) | v0.2 | Working |
+| Presets (eco / smart / standard / premium) | v0.2 | Working |
+| Channel filters (--since/--until, --min/max-duration, --no-shorts, --skip-existing, --workers, --search) | v0.3 | Working |
+| ASR correction via LLM (`--correct-asr`) | v0.4 | Working |
+| Speaker diarization (`--diarize`, pyannote) | v0.5 | Working |
+| `analyze` sub-command — free-form LLM over a batch | v0.6 | Working |
+| `research` — find videos by topic on YouTube | v0.7 | Working |
+| `subscribes` — channel watch with RSS + incremental update | v0.7 | Working |
+| `history` — log past research/subscribes runs | v0.7 | Working |
+| YouTube SP date filter (`--days N` → server-side prefilter) | v0.7 | Working |
+| `schedule` — cross-OS scheduler snippet generator (cron/launchd/systemd/Task Scheduler) | v0.7 | Working |
+| Web UI (Gradio) | v0.4 | **Experimental, hidden** — code preserved, not maintained |
 
 ---
 
@@ -132,15 +145,26 @@ youtube-transcribe triggers test "вот этот код важен"
 
 ### Presets
 
-| Preset | Transcribe | Vision | Detection |
-|---|---|---|---|
-| `eco` | subtitles → user-chosen | off | keywords only |
-| `smart` (default) | subtitles → quality check → fallback | gemini | hybrid |
-| `standard` | whisper-local | gemini | hybrid |
-| `premium` | whisper-large | gemini | LLM full pass |
+A preset bundles several settings (transcribe backend, fallback, visual analysis,
+keyframe detection, quality check) under one name. Pick with `--preset <name>` or
+set `default_preset` in `~/.youtube-transcribe/config.toml`.
+
+| Preset | Transcribe | Quality check | Vision (visual moments) | Detection method |
+|---|---|---|---|---|
+| `eco` | subtitles → fallback | off | off | keywords only |
+| `smart` (default) | subtitles → quality check → fallback | on | gemini | hybrid |
+| `standard` | whisper-local | on | gemini | hybrid |
+| `premium` | whisper-large | on | gemini | LLM full pass |
+
+**Heads-up about `smart`:** it enables Gemini visual analysis by default
+(`vision_backend = "gemini"`). If you don't want any cloud calls, pick `eco`
+explicitly or set `vision_backend = "off"` in your config. The `smart`
+preset trades a small Gemini cost for cross-referenced keyframes + visual
+context in `combined.md`.
 
 ```bash
-youtube-transcribe URL --preset standard
+youtube-transcribe URL --preset eco              # nothing leaves the machine
+youtube-transcribe URL --preset standard         # whisper-local + visual moments
 youtube-transcribe URL --preset smart --frames-per-window 5
 ```
 
@@ -277,6 +301,15 @@ youtube-transcribe batch https://www.youtube.com/@channel --limit 5 \
 Discover and analyze new videos on a topic in one command. YouTube
 ranking decides relevance, you decide period + analysis angle.
 
+> **About the analyze step.** By default, on the first interactive run
+> `research` / `subscribes update` / `batch --then-analyze` asks once
+> which LLM to use for the analyze pass (skip / gemini / claude / openai
+> / ollama) and persists the choice in `~/.youtube-transcribe/config.toml`.
+> Override per-call with `--analyze-backend X`. In a non-TTY context
+> (Claude Code subprocess, CI, piped run) the prompt is skipped and the
+> analyze pass is silently skipped — `combined.md` is the output and the
+> chat-side LLM does the analysis. Force-skip with `--no-analyze`.
+
 ```bash
 # Default — last 30 days, ru+en search, top 20 results
 yt-tr research "Claude новинки" \
@@ -310,7 +343,7 @@ yt-tr research "Claude" --in-subscribes --group ai-research \
 
 ```bash
 # Add channels
-yt-tr subscribes add https://www.youtube.com/@AnthropicAI --group ai
+yt-tr subscribes add https://www.youtube.com/@anthropic-ai --group ai
 yt-tr subscribes add https://www.youtube.com/@lexfridman --group philosophy
 
 # List (optionally by group)
@@ -321,7 +354,7 @@ yt-tr subscribes list --group ai
 yt-tr subscribes edit
 
 # Remove
-yt-tr subscribes remove @AnthropicAI
+yt-tr subscribes remove @anthropic-ai
 
 # Update: incremental (stateful per channel)
 yt-tr subscribes update --prompt "Что обсуждалось"
@@ -619,20 +652,24 @@ class TranscriptionResult:
 
 ## Roadmap
 
-**v0.3 — расширение batch:**
-- `batch --search "claude programming"` — поиск по тегам/теме (YouTube Data API или yt-dlp `ytsearchN:`)
-- `--workers N` — параллельный прогон (для облачных бэкендов)
-- `--skip-existing` — кэш по `video_id`, чтобы повторный batch не перетранскрибировал уже сделанное
-- Фильтры канала: `--since`, `--until`, `--min-duration`, `--max-duration`, `--no-shorts`
+**Shipped** (v0.1 → v0.7):
+- v0.3 — channel filters (--since/--until/--min/max-duration/--no-shorts), --skip-existing, --workers, --search
+- v0.4 — `--correct-asr` (LLM post-processing on low-quality transcripts)
+- v0.5 — `--diarize` (pyannote-audio speaker labels)
+- v0.6 — `analyze` sub-command, `batch --then-analyze`
+- v0.7 — `research`, `subscribes`, `history`, YouTube SP date filter, cross-OS scheduler
 
-**v0.4:**
-- `batch --instagram @user` — Reels из аккаунта Instagram (yt-dlp + cookies)
+**v0.8 candidates** (not started, ordered by likely value):
+- **Instagram / TikTok subscribes** — `yt-tr subscribes add` accepts an IG profile
+  or TikTok user, scrapes new uploads via yt-dlp. Same incremental flow as YouTube
+  (no RSS available for these platforms — always yt-dlp scrape).
+- **Chunking videos > 2h** for cloud backends with payload limits.
+- **PyPI publication.**
+- **Web UI revival** — currently hidden as experimental; if there's demand we'll
+  re-do the Gradio tabs properly.
 
-**v1.x:**
-- Диаризация (who-said-what) через `pyannote-audio`
-- Чанкинг для видео >2ч
-- Опциональное LLM-саммари внутри skill (`--summarize`) — для тех, кто использует CLI без Claude-чата
-- PyPI publication
+Not planned: search/`research` for Instagram or TikTok (their search is too noisy
+to be useful), platforms beyond {YouTube, Instagram, TikTok} for `subscribes`.
 
 ---
 
