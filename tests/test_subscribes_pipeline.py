@@ -621,3 +621,154 @@ def test_tiktok_dedup_via_last_seen_video_id(tmp_path: Path):
         )
     seen_ids = [t.video_id for t in captured["targets"]]
     assert seen_ids == ["NEW1", "NEW2"]  # OLD_SEEN stopped the scan
+
+
+def test_platform_filter_restricts_to_one_platform(tmp_path: Path):
+    """--platform tiktok updates ONLY TikTok channels, skipping YT and IG."""
+    from skills.youtube_transcribe.subscribes.pipeline import (
+        run_subscribes_update, _ChannelVideo,
+    )
+    sub_path = tmp_path / "subscribes.toml"
+    channels = [
+        _channel(handle="@yt", channel_id="UC_yt", last_id="x",
+                 last_pub="2026-01-01T00:00:00+00:00", platform="youtube"),
+        _channel(handle="@ig", channel_id="ig", last_id="x",
+                 last_pub="2026-01-01T00:00:00+00:00", platform="instagram"),
+        _channel(handle="@tt", channel_id="@tt", last_id="x",
+                 last_pub="2026-01-01T00:00:00+00:00", platform="tiktok"),
+    ]
+    fake_videos = [_ChannelVideo(
+        video_id="v1", url="u", title="t", duration_sec=10,
+        published=datetime.now(timezone.utc),
+    )]
+
+    fetch_calls: list[str] = []
+
+    def fake_fetch(url, *, cookies_browser=None, limit=30, **kw):
+        fetch_calls.append(url)
+        return fake_videos
+
+    with patch(
+        "skills.youtube_transcribe.subscribes.pipeline.load_subscribes",
+        return_value=channels,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline.fetch_rss",
+        side_effect=AssertionError("RSS must NOT be called: only TT in scope"),
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._fetch_via_yt_dlp",
+        side_effect=fake_fetch,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._run_batch_pipeline",
+        return_value=tmp_path / "batch",
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._stdin_is_tty",
+        return_value=False,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._append_history",
+    ):
+        run_subscribes_update(
+            subscribes_path=sub_path,
+            group=None, platform="tiktok",
+            days=None, since=None, until=None,
+            match=None, filter_text=None,
+            no_rss=False, yes=True, no_analyze=True,
+            prompt=None, prompt_file=None,
+            analyze_backend="gemini", filter_backend="gemini",
+            ollama_model="llama3.2:3b", ollama_host="http://localhost:11434",
+            no_stdout=False, output_dir=str(tmp_path),
+            api_keys={}, batch_opts={},
+        )
+    # Exactly one fetch call — for the TikTok channel.
+    assert len(fetch_calls) == 1
+    assert "tiktok" in fetch_calls[0].lower()
+
+
+def test_platform_filter_combined_with_group(tmp_path: Path):
+    """--platform tiktok --group ai → only TikTok channels in group 'ai'."""
+    from skills.youtube_transcribe.subscribes.pipeline import (
+        run_subscribes_update, _ChannelVideo,
+    )
+    sub_path = tmp_path / "subscribes.toml"
+    channels = [
+        _channel(handle="@tt1", channel_id="@tt1", last_id="x",
+                 last_pub="2026-01-01T00:00:00+00:00",
+                 group="ai", platform="tiktok"),
+        _channel(handle="@tt2", channel_id="@tt2", last_id="x",
+                 last_pub="2026-01-01T00:00:00+00:00",
+                 group="memes", platform="tiktok"),
+        _channel(handle="@ig1", channel_id="ig1", last_id="x",
+                 last_pub="2026-01-01T00:00:00+00:00",
+                 group="ai", platform="instagram"),
+    ]
+
+    fetch_calls: list[str] = []
+
+    def fake_fetch(url, *, cookies_browser=None, limit=30, **kw):
+        fetch_calls.append(url)
+        return [_ChannelVideo(
+            video_id="v1", url="u", title="t", duration_sec=10,
+            published=datetime.now(timezone.utc),
+        )]
+
+    with patch(
+        "skills.youtube_transcribe.subscribes.pipeline.load_subscribes",
+        return_value=channels,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._fetch_via_yt_dlp",
+        side_effect=fake_fetch,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._run_batch_pipeline",
+        return_value=tmp_path / "batch",
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._stdin_is_tty",
+        return_value=False,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._append_history",
+    ):
+        run_subscribes_update(
+            subscribes_path=sub_path,
+            group="ai", platform="tiktok",
+            days=None, since=None, until=None,
+            match=None, filter_text=None,
+            no_rss=False, yes=True, no_analyze=True,
+            prompt=None, prompt_file=None,
+            analyze_backend="gemini", filter_backend="gemini",
+            ollama_model="llama3.2:3b", ollama_host="http://localhost:11434",
+            no_stdout=False, output_dir=str(tmp_path),
+            api_keys={}, batch_opts={},
+        )
+    # Only @tt1 matches: platform=tiktok AND group=ai. @tt2 wrong group,
+    # @ig1 wrong platform.
+    assert len(fetch_calls) == 1
+
+
+def test_platform_filter_empty_intersection_returns_none(tmp_path: Path):
+    """--platform tiktok with no TikTok channels in subscribes → no-op."""
+    from skills.youtube_transcribe.subscribes.pipeline import (
+        run_subscribes_update,
+    )
+    sub_path = tmp_path / "subscribes.toml"
+    channels = [
+        _channel(handle="@yt", channel_id="UC_yt", last_id="x",
+                 last_pub="2026-01-01T00:00:00+00:00", platform="youtube"),
+    ]
+    with patch(
+        "skills.youtube_transcribe.subscribes.pipeline.load_subscribes",
+        return_value=channels,
+    ), patch(
+        "skills.youtube_transcribe.subscribes.pipeline._run_batch_pipeline",
+        side_effect=AssertionError("batch must NOT run when filter empty"),
+    ):
+        result = run_subscribes_update(
+            subscribes_path=sub_path,
+            group=None, platform="tiktok",
+            days=None, since=None, until=None,
+            match=None, filter_text=None,
+            no_rss=False, yes=True, no_analyze=True,
+            prompt=None, prompt_file=None,
+            analyze_backend="gemini", filter_backend="gemini",
+            ollama_model="llama3.2:3b", ollama_host="http://localhost:11434",
+            no_stdout=False, output_dir=str(tmp_path),
+            api_keys={}, batch_opts={},
+        )
+    assert result is None

@@ -165,6 +165,12 @@ def _default_editor() -> str:
 
 @subscribes_group.command(name="update")
 @click.option("--group", default=None)
+@click.option("--platform",
+              type=click.Choice(["youtube", "instagram", "tiktok"]),
+              default=None,
+              help="Update only channels from this platform. Combines with "
+                   "--group: --platform tiktok --group ai-research → only "
+                   "TikTok channels in that group.")
 @click.option("--days", type=int, default=None,
               help="Override stateful window: last N days (state NOT updated).")
 @click.option("--since", default=None)
@@ -200,10 +206,10 @@ def _default_editor() -> str:
 @click.option("--language", default=None)
 @click.option("--workers", "workers_opt", type=int, default=1)
 def update_cmd(
-    group, days, since, until, match, filter_text, no_rss, yes, no_analyze,
-    prompt_inline, prompt_file, analyze_backend_opt, filter_backend_opt,
-    ollama_model_opt, ollama_host_opt, no_stdout_opt, output_dir_opt,
-    **batch_passthrough,
+    group, platform, days, since, until, match, filter_text, no_rss, yes,
+    no_analyze, prompt_inline, prompt_file, analyze_backend_opt,
+    filter_backend_opt, ollama_model_opt, ollama_host_opt, no_stdout_opt,
+    output_dir_opt, **batch_passthrough,
 ) -> None:
     """Run subscribes update — fetch latest, filter, transcribe, analyze."""
     from datetime import date as _date
@@ -249,7 +255,7 @@ def update_cmd(
     try:
         run_subscribes_update(
             subscribes_path=SUBSCRIBES_PATH,
-            group=group,
+            group=group, platform=platform,
             days=days, since=since_d, until=until_d,
             match=match, filter_text=filter_text,
             no_rss=no_rss, yes=yes, no_analyze=effective_no_analyze,

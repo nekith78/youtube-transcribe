@@ -181,6 +181,7 @@ def run_subscribes_update(
     output_dir: str,
     api_keys: dict[str, str | None],
     batch_opts: dict,
+    platform: str | None = None,
     instagram_cookies_browser: str = "",
     tiktok_cookies_browser: str = "",
 ) -> Path | None:
@@ -188,8 +189,21 @@ def run_subscribes_update(
 
     channels = load_subscribes(subscribes_path)
     channels = filter_by_group(channels, group)
+    if platform:
+        # Combines with --group: AND semantics. Empty result is a noisy no-op
+        # rather than an error — the user might be running both filters
+        # simultaneously in a script.
+        channels = [c for c in channels if c.platform == platform]
     if not channels:
-        _console.print("[yellow]Нет каналов (или группа пуста).[/yellow]")
+        scope_bits = []
+        if platform:
+            scope_bits.append(f"platform={platform}")
+        if group:
+            scope_bits.append(f"group={group}")
+        scope = " ".join(scope_bits) if scope_bits else "—"
+        _console.print(
+            f"[yellow]Нет каналов под выбранный фильтр ({scope}).[/yellow]"
+        )
         return None
 
     is_override = days is not None or since is not None or until is not None
