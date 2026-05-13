@@ -85,6 +85,21 @@ _NOT_FOUND_SIGNATURES = (
     "this account",
 )
 
+# yt-dlp signatures indicating the Instagram extractor itself is broken
+# upstream (not a per-user problem). When we see one of these on an IG
+# URL, we fall back to instaloader. Don't include "not found" here —
+# that's a real channel-not-found situation, handled separately.
+_YT_DLP_IG_BROKEN_SIGNATURES = (
+    "unable to extract data",
+    "marked as broken",
+    "empty media response",
+)
+
+
+def _looks_like_yt_dlp_broken_extractor(err_text: str) -> bool:
+    lower = err_text.lower()
+    return any(sig in lower for sig in _YT_DLP_IG_BROKEN_SIGNATURES)
+
 
 def _looks_like_channel_not_found(err_text: str) -> bool:
     """Heuristic: did yt-dlp fail because the username doesn't exist?
@@ -95,6 +110,60 @@ def _looks_like_channel_not_found(err_text: str) -> bool:
     """
     lower = err_text.lower()
     return any(sig in lower for sig in _NOT_FOUND_SIGNATURES)
+
+
+def _fetch_instagram(ch, *, cookies_file: str | None) -> list[_ChannelVideo]:
+    """Two-step Instagram fetch: yt-dlp first, instaloader as fallback.
+
+    The Instagram extractor in yt-dlp is currently broken upstream — when
+    it returns "Unable to extract data" / similar, we try instaloader
+    (optional dep). If instaloader isn't installed, we re-raise the
+    original yt-dlp DownloadError so the user sees the suggestion to
+    install the `[instagram]` extra.
+
+    Username (the instaloader identifier) is the channel_id we stored at
+    `subscribes add` time.
+    """
+    try:
+        return _fetch_via_yt_dlp(
+            ch.url,
+            cookies_file=cookies_file,
+            accept_missing_dates=True,
+        )
+    except Exception as e:
+        if not _looks_like_yt_dlp_broken_extractor(str(e)):
+            raise
+
+    # yt-dlp's IG extractor is broken upstream — try instaloader.
+    try:
+        from skills.youtube_transcribe.subscribes.instagram_loader import (
+            InstaloaderUnavailable, fetch_profile_videos,
+        )
+    except ImportError:
+        _console.print(
+            "[yellow]Instagram fallback: instaloader not installed. "
+            "Run `uv sync --extra instagram` to enable.[/yellow]"
+        )
+        return []
+
+    try:
+        username = ch.channel_id or (ch.handle or "").lstrip("@")
+        if not username:
+            return []
+        return fetch_profile_videos(
+            username, cookies_file=cookies_file, limit=30,
+        )
+    except InstaloaderUnavailable as e:
+        _console.print(f"[yellow]Instagram fallback unavailable: {e}[/yellow]")
+        return []
+    except Exception as e:
+        if _looks_like_channel_not_found(str(e)):
+            raise ChannelNotFoundError(str(e)) from e
+        _console.print(
+            f"[yellow]Instagram fallback (instaloader) failed for "
+            f"{ch.url}: {e}[/yellow]"
+        )
+        return []
 
 
 def _fetch_via_yt_dlp(
@@ -235,7 +304,8 @@ def run_subscribes_update(
 
         # Per-platform source dispatch:
         #   • YouTube: RSS by default (fast), yt-dlp on --no-rss (slow, gives duration)
-        #   • Instagram: always yt-dlp scrape, with cookies (no RSS exists; anon → 401)
+        #   • Instagram: yt-dlp first; on broken-extractor fallback to instaloader
+        #     (optional `[instagram]` extra). No RSS exists; anon → 401.
         #   • TikTok: always yt-dlp scrape; cookies optional
         # `accept_missing_dates=True` for IG/TT — those platforms' flat
         # extracts don't include upload_date, so we synthesize a descending
@@ -244,10 +314,8 @@ def run_subscribes_update(
         # [tiktok].cookies_file), NOT from `cookies-from-browser`.
         try:
             if ch.platform == "instagram":
-                entries = _fetch_via_yt_dlp(
-                    ch.url,
-                    cookies_file=instagram_cookies_file or None,
-                    accept_missing_dates=True,
+                entries = _fetch_instagram(
+                    ch, cookies_file=instagram_cookies_file or None,
                 )
             elif ch.platform == "tiktok":
                 entries = _fetch_via_yt_dlp(

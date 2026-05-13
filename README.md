@@ -669,10 +669,18 @@ class TranscriptionResult:
 - v0.6 — `analyze` sub-command, `batch --then-analyze`
 - v0.7 — `research`, `subscribes`, `history`, YouTube SP date filter, cross-OS scheduler
 
-**v0.8 candidates** (not started, ordered by likely value):
-- **Instagram / TikTok subscribes** — `yt-tr subscribes add` accepts an IG profile
-  or TikTok user, scrapes new uploads via yt-dlp. Same incremental flow as YouTube
-  (no RSS available for these platforms — always yt-dlp scrape).
+**v0.8 (in progress):**
+- **Instagram / TikTok subscribes** — `subscribes add` accepts an IG profile
+  or TikTok user. Cookies are required (registered via `subscribes cookies set
+  <platform> <netscape-cookies.txt>`); we never read browser cookies. For
+  Instagram, yt-dlp is primary; when its profile extractor is marked broken
+  upstream (which happens periodically), we fall back to **instaloader**
+  (`uv sync --extra instagram`). Intended for occasional fetches, not bulk
+  scraping — the loader prints a one-time warning per process.
+- **Cross-OS scheduler installer** for `subscribes update` (cron / launchd /
+  Task Scheduler).
+
+**v0.9 candidates** (not started, ordered by likely value):
 - **Chunking videos > 2h** for cloud backends with payload limits.
 - **PyPI publication.**
 - **Web UI revival** — currently hidden as experimental; if there's demand we'll

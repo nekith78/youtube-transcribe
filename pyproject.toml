@@ -85,6 +85,15 @@ diarization = [
     "pyannote.audio>=3.0.0",
 ]
 
+# Instagram fallback — opt-in. Used by `subscribes update` when yt-dlp's
+# Instagram extractor is broken upstream (happens periodically).
+# Pure Python, ~5 MB total. See feedback_cookies_strict_file_only.md
+# memory rule: this tool reads only the Netscape cookies.txt file the
+# user registered, not their full browser cookie store.
+instagram = [
+    "instaloader>=4.13",
+]
+
 [project.scripts]
 youtube-transcribe = "skills.youtube_transcribe.transcribe:cli"
 

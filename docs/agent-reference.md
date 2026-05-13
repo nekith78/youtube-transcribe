@@ -329,7 +329,7 @@ Failed video_ids stay in `errors.log` of each batch dir. Re-fetch them via
 |---|---|---|---|---|---|
 | `transcribe <URL>` / `batch <URL>` | ✓ | ✓ (needs `--cookies-file`) | ✓ | ✓ | ✓ |
 | `research "query"` | ✓ | ✗ | ✗ | ✗ | n/a |
-| `subscribes` | ✓ | ✗ (v0.8 candidate) | ✗ (v0.8 candidate) | ✗ | n/a |
+| `subscribes` | ✓ (RSS) | ✓ (cookies + yt-dlp / instaloader fallback) | ✓ (cookies + yt-dlp) | ✗ | n/a |
 
 Instagram URL detector lives in
 [`utils/downloader.py`](../skills/youtube_transcribe/utils/downloader.py)
@@ -337,8 +337,21 @@ Instagram URL detector lives in
 upstream in the same file.
 
 `research` is YouTube-only because `yt-dlp ytsearchN:` only supports YouTube.
-`subscribes` is YouTube-only today because we use YouTube RSS feeds; IG/TikTok
-would need yt-dlp-based scraping (no RSS exists for them).
+
+`subscribes` per-platform source dispatch lives in
+[`subscribes/pipeline.py`](../skills/youtube_transcribe/subscribes/pipeline.py):
+- **YouTube** — RSS feed (no cookies needed).
+- **Instagram** — yt-dlp first; if its profile extractor is marked broken
+  upstream (signature: `"marked as broken"` / `"unable to extract data"` /
+  `"empty media response"`), falls back to **instaloader** (`[instagram]`
+  optional extra). Cookies come strictly from the registered Netscape file —
+  never `cookies-from-browser`. See
+  [`subscribes/instagram_loader.py`](../skills/youtube_transcribe/subscribes/instagram_loader.py).
+- **TikTok** — yt-dlp only (no fallback library).
+
+Install the IG fallback with `uv sync --extra instagram`. It is intended for
+occasional fetches (a few channels, infrequent updates), NOT bulk scraping —
+the loader prints a one-time warning per process.
 
 ---
 
