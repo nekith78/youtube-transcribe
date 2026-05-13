@@ -1,77 +1,160 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Instructions for Claude Code (and any other AI agent) working in this
+repository.
 
-## Состояние репо
+## Repository state
 
-Реализация **ещё не начиналась**. В репо только дизайн + план, кода нет:
+`youtube-transcribe` is a mature CLI tool: v0.8.0, ~900 unit tests
+passing, in active use. Shipped commands: `transcribe`, `batch`,
+`analyze`, `research`, `subscribes` (YouTube / Instagram / TikTok),
+`history`, `config`, `webui` (hidden).
 
-- Спека (источник истины): [docs/specs/2026-05-08-youtube-transcribe-design.md](docs/specs/2026-05-08-youtube-transcribe-design.md) — 19 пронумерованных секций.
-- План реализации (30 тасок, 7 фаз): [docs/plans/2026-05-08-youtube-transcribe.md](docs/plans/2026-05-08-youtube-transcribe.md). Каждая таска самодостаточна (файлы, код, тесты, commit-команда).
-- Cross-machine handoff: [HANDOFF.md](HANDOFF.md).
+The source of truth for behavior is the code. Design documents in
+`docs/specs/` and plan documents in `docs/plans/` capture the original
+intent at each version boundary but diverge from runtime reality in
+places (v0.8 in particular added security migrations, interactive
+prompts, and smart-backend fixes that postdate the v0.7 spec).
 
-Если спека и план расходятся — верить спеке, чинить план.
-
-## Как продолжать работу
-
-Дефолтный режим выполнения — **subagent-driven**: один свежий subagent на одну Task плана, ревью между тасками. Перед стартом новой таски: `git log --oneline` → понять, на какой Task остановились.
-
-```
-Skill superpowers:subagent-driven-development → диспатчишь Task N → ревью → Task N+1
-```
-
-Pre-flight перед Task 1: проверить `uv --version` (нужно 0.4+). На Mac доп. требования (ffmpeg, arm64-Python, macOS ≥13.5) — см. HANDOFF.md.
-
-## Команды (после Task 1)
+Start any work by reading recent commits:
 
 ```bash
-uv sync --extra dev                    # установить deps (pyproject.toml появляется в Task 1)
-uv run pytest -v                       # все unit-тесты
-uv run pytest tests/test_xxx.py::test_yyy   # один тест
-RUN_E2E_SMOKE=1 uv run pytest -v       # включить опциональные e2e (бьют по реальному YouTube)
-uv run youtube-transcribe --help       # CLI после Task 20+
+git log --oneline -15
 ```
 
-Запускать `uv sync` **до** Task 1 нельзя — `pyproject.toml` ещё не создан.
+Then read the relevant code path, not the spec.
 
-## Архитектурные инварианты
+## How to continue work
 
-**Имя пакета vs имя CLI.** Skill называется `youtube-transcribe` (kebab-case) — это имя плагина, slash-команды и CLI-бинарника. Python-пакет лежит в `skills/youtube_transcribe/` (snake_case) — иначе импорты не работают. Использовать оба варианта по контексту, не путать.
+Standard execution mode is **subagent-driven**: dispatch one fresh
+subagent per task, review between tasks. Before starting:
 
-**Абстракция бэкендов.** `backends/base.py` определяет `Transcriber` (Protocol) и `TranscriptionResult` (dataclass). Все 8 бэкендов (subtitles, whisper-local, gemini, groq, openai, deepgram, assemblyai, custom) — взаимозаменяемые реализации одного интерфейса. Тесты пишутся **против интерфейса**, внешние SDK мокаются. Добавить новый бэкенд = реализовать `Transcriber` + зарегистрировать в реестре, остальной код не трогается.
+1. `git status` and `git log --oneline -5` — understand where things stand.
+2. `uv run pytest -q` — confirm the baseline is green.
+3. For first-time setup on a fresh machine, see [`HANDOFF.md`](HANDOFF.md).
 
-**Smart-режим — не бэкенд, а композиция.** При `default_backend = "smart"` сначала пробуется `subtitles` (если URL — YouTube), затем `fallback_backend` (по умолчанию `whisper-local`). Логика собирается на верхнем уровне, не в бэкендах.
+## Common commands
 
-**Whisper-local — две физические реализации, один интерфейс.** На macOS arm64 — `mlx-whisper`, везде ещё — `faster-whisper`. Выбор делает `utils/platform_detect.py` автоматически по результату детекта (label/backend_impl/device/vram). `MODEL_MAP` (спека §5.2) задаёт пары `mlx`/`faster` для каждой модели; `distil` существует только на `faster` — на Mac должна быть понятная ошибка с exit code 4, не stack trace.
+```bash
+uv sync                            # install base deps
+uv sync --extra dev                # + pytest, coverage
+uv sync --extra instagram          # + instaloader fallback
+uv sync --extra diarization        # + pyannote
+uv sync --extra webui              # + gradio
+uv sync --extra ocr                # + pytesseract, easyocr
 
-**Конфиг и секреты.**
-- `~/.youtube-transcribe/config.toml` — настройки (TOML, читается `tomli`/пишется `tomli-w`).
-- `~/.youtube-transcribe/.env` — API-ключи, права `0600` на Unix.
-- Приоритет загрузки: env vars процесса > `.env` > ошибка с инструкцией.
-- Ключи **никогда** не печатать целиком в логи (даже при `--verbose`) — маскировать как `sk-***...XYZ`. На запрос «покажи мой ключ» — отказ, отсылка в `.env`.
+uv run pytest                      # full suite (~25s, ~900 tests)
+uv run pytest tests/test_X.py -v   # one file
+uv run pytest -k keyword -v        # filter by keyword
+RUN_E2E_SMOKE=1 uv run pytest -v   # enable network-touching e2e
 
-## Cross-OS специфика
+uv run youtube-transcribe --help   # see all commands
+```
 
-Разработка идёт на **Windows**, валидация на **Mac** — последняя фаза плана (Tasks 28–30). `mlx-whisper` на этапе кодинга **не тестируется на хост-машине разработчика** — реализация по официальной доке, отладка на Mac через git pull → запуск → фикс.
+## Architecture invariants
 
-`.gitattributes` уже фиксирует EOL: `*.py *.md *.toml` → `LF`, `*.ps1 *.bat *.cmd` → `CRLF`. Не переопределять. `uv.lock` намеренно не коммитим (cross-platform skill, lock дал бы Mac/Windows-расходимость на mlx-whisper). `.python-version` тоже игнорируется.
+These are load-bearing — breaking them silently breaks the tool.
 
-`mlx-whisper` подцепляется PEP 508 marker'ом `sys_platform == 'darwin' and platform_machine == 'arm64'` — не импортировать напрямую без проверки платформы, иначе на Windows будет ImportError.
+**Naming.** The Claude Code plugin / CLI binary is `youtube-transcribe`
+(kebab-case). The Python package is `skills/youtube_transcribe/`
+(snake_case). Both forms appear in the codebase and docs — use them
+by context. **`yt-tr` is not a valid alias** and never was; if you
+see it in any doc, fix it to `youtube-transcribe`.
 
-**Симметричный marker на `faster-whisper`:** `sys_platform != 'darwin' or platform_machine != 'arm64'` (де Морган от `not (... and ...)` — стандарт PEP 508 не поддерживает `not (...)` через hatchling). Причина — `faster-whisper 1.2+` тянет `onnxruntime 1.26+`, у которого нет wheel под macOS arm64. На Mac arm64 используется только mlx-whisper, на Windows/Linux/x86_64-Mac — только faster-whisper. `backends/whisper_local.py` (Tasks 9-10) импортирует обе библиотеки внутри функций после `platform_detect`, не на module-level.
+**Cookies are strict file-only (v0.8 security migration).** All paths
+that previously accepted `--cookies-from-browser` now require an
+explicit Netscape `cookies.txt` file. Rationale: browser-cookie
+access reads the entire cookie store into process memory — even on
+macOS where Keychain prompts, an "Always Allow" grant silently leaks
+all cookies. This is non-negotiable.
 
-## Тестирование
+- `transcribe` / `batch` — flag is `--cookies-file <path>`
+- `subscribes` (IG / TikTok) — register once via
+  `subscribes cookies set <platform> <path>`; stored at
+  `~/.youtube-transcribe/<platform>-cookies.txt` with mode 0600.
 
-- **Уровень 1:** unit с моками — `subprocess`/`platform` для `platform_detect`, SDK-клиенты для каждого бэкенда. Должны зеленеть на любой ОС без ключей и без интернета.
-- **Уровень 2:** e2e smoke под env-флагом `RUN_E2E_SMOKE=1` — реальный 19-сек ролик с YouTube. По умолчанию выключены, включаются вручную и в CI с секретами.
-- **Уровень 3:** ручной прогон на Mac (Tasks 28–29) — wizard, реальная транскрипция через mlx-whisper, проверка всех 5 моделей.
+**Backend abstraction.** `backends/base.py` defines `Transcriber`
+(Protocol) and `TranscriptionResult` (dataclass). All 8 backends
+(`subtitles`, `whisper-local`, `gemini`, `groq`, `openai`, `deepgram`,
+`assemblyai`, `custom`) are interchangeable implementations. Tests run
+against the interface; SDKs are mocked. To add a backend:
+implement `Transcriber` + register in `backends/factory.py::build_backend`.
 
-TDD-стиль обязателен (см. план: failing test → impl → pass → commit).
+**`smart` is composition, not a backend.** When `default_backend ==
+"smart"`, the flow is: try `subtitles` if the URL is YouTube and
+`fast_path_enabled`, otherwise (or on subtitles failure) download
+audio and fall back to `cfg.fallback_backend` (default `whisper-local`).
+The smart composer is in `backends/factory.run_smart`; it's
+responsible for downloading audio when the input is a URL because
+non-subtitles backends call `Path(audio).exists()` and reject URLs.
+(v0.8 fix `4e1afcf`.)
 
-## Контракт перед push в main
+**Whisper-local: two physical implementations.** On macOS arm64 we use
+`mlx-whisper`; everywhere else `faster-whisper`. The choice is
+automatic via `utils/platform_detect.py`. PEP 508 markers gate the
+installs:
 
-Скилл `git-cross-os` (глобальный) требует прогон `code-reviewer` + `security-review` перед финальным push. Соблюдать.
+- `mlx-whisper`: `sys_platform == 'darwin' and platform_machine == 'arm64'`
+- `faster-whisper`: `sys_platform != 'darwin' or platform_machine != 'arm64'`
 
-## Out of scope для v1
+Never `import` either unconditionally — both modules will be absent
+on the wrong platform.
 
-Диаризация, чанкинг видео >2ч, постобработка через локальную LLM, авто-саммари внутри skill, web UI, стриминг, не-OpenAI-compat провайдеры в `custom`. Если возникает запрос на это — фиксировать в roadmap (README), а не докручивать в текущую итерацию.
+**Config and secrets.**
+- `~/.youtube-transcribe/config.toml` — settings (TOML, `tomli` to
+  read, `tomli-w` to write, `tomlkit` for comment-preserving edits).
+- `~/.youtube-transcribe/.env` — API keys, mode 0600 on Unix.
+- Load order: process env > `.env` > error with instructions.
+- API keys are masked when printed (`sk-***...XYZ`). Never log full keys.
+
+## Cross-OS specifics
+
+The skill is cross-platform: macOS arm64 (mlx-whisper), Windows / Linux
+/ Intel-Mac (faster-whisper). Always check that new code works on both
+sides. The `.gitattributes` file pins EOL: `*.py *.md *.toml` → LF,
+`*.ps1 *.bat *.cmd` → CRLF. Don't override.
+
+`uv.lock` and `.python-version` are deliberately NOT committed — each
+platform resolves its own versions.
+
+When suggesting commands to the user, prefer cross-platform forms.
+If a feature is OS-specific, say so explicitly.
+
+## Tests
+
+Three levels:
+
+1. **Unit (default)** — fast, mock SDKs and `subprocess`. Should be
+   green on any OS without API keys or network. Run by `uv run pytest`.
+2. **E2E smoke (opt-in)** — `RUN_E2E_SMOKE=1` flag enables tests that
+   hit real YouTube. Don't enable in CI without secrets.
+3. **Manual phase regression** — `bash scripts/qa.sh phase8a` etc.
+   Wraps end-to-end flows (cookies workflow, subscribes update, etc.)
+   into ~12-step assertion lists with user-state restore.
+
+TDD style for new code: failing test → minimal impl → pass → commit.
+
+## Documentation languages
+
+Project docs, code, CLI strings, and agent guides are **English only**.
+User chat-language preferences (e.g. Russian) live in the user's own
+global rules — outside this repo.
+
+If you find any user-facing string in Russian inside this repo,
+migrate it to English. (v0.8 commit `5a1a71b` did the bulk of this;
+new strings should land in English from the start.)
+
+## Pre-push contract
+
+Before `git push` to `main`:
+
+1. `uv run pytest` green.
+2. For security/IO-touching changes: invoke the global skill
+   `git-cross-os`, which runs `code-reviewer` + `security-review`
+   sub-agents before push.
+
+## Out of scope for v0.9 (currently)
+
+Chunking videos > 2h, PyPI publication, Web UI revival (Gradio tabs
+re-do). These are tracked in README `## Roadmap`; add new requests
+there before coding.

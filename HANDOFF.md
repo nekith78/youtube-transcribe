@@ -1,125 +1,176 @@
 # Handoff guide — picking up work on a new machine
 
-This document captures the current project state and how to continue. Read it whenever you switch machines or come back after a break.
+This document captures the current project state and how to resume.
+Read it whenever you switch machines or come back after a break.
 
 ---
 
-## Current state
+## Current state (2026-05-14)
 
-- **What's done:**
-  - Design document: [`docs/specs/2026-05-08-youtube-transcribe-design.md`](docs/specs/2026-05-08-youtube-transcribe-design.md) — full spec covering 8 backends, 3 install paths, wizard, secrets, error handling, hardware tiers.
-  - Implementation plan: [`docs/plans/2026-05-08-youtube-transcribe.md`](docs/plans/2026-05-08-youtube-transcribe.md) — 30 tasks across 7 phases, TDD-style, no placeholders.
-- **What's pending:** All 30 tasks. **No code has been written yet.** First clone will give you only the docs above plus this handoff.
-- **Execution mode chosen:** subagent-driven (one fresh subagent per task, with review between tasks).
+- **Version:** `v0.8.0` — shipped: `transcribe`, `batch`, `analyze`,
+  `research`, `subscribes` (YouTube + Instagram + TikTok), `history`,
+  visual mode, ASR correction, speaker diarization.
+- **Tests:** 898 passing, 3 skipped, 0 failures.
+- **What's documented:**
+  - [`README.md`](README.md) — user-facing overview, install,
+    quick start, every command with examples.
+  - [`CHANGELOG.md`](CHANGELOG.md) — per-version history.
+  - [`docs/agent-reference.md`](docs/agent-reference.md) — full CLI
+    surface, file map, exit codes, invariants for AI agents driving
+    the tool.
+  - [`CLAUDE.md`](CLAUDE.md) — project-level instructions for Claude
+    Code sessions opening this repo.
+- **What's in flight:** see `## Roadmap` in README (next: PyPI
+  publication, chunking videos > 2h for cloud backends).
 
-Run `git log --oneline` after cloning to see exactly where things stand.
+Run `git log --oneline -10` after cloning to see recent work.
 
 ---
 
-## Continuing on macOS Apple Silicon (M1/M2/M3/M4)
+## First-time setup on macOS Apple Silicon
 
 ### Pre-requisites — install once
 
 ```bash
-# Xcode Command Line Tools (for git, compilers needed by faster-whisper deps)
 xcode-select --install
-
-# Homebrew (if not already installed)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# ffmpeg (required by yt-dlp for audio extraction)
 brew install ffmpeg
-ffmpeg -version  # confirm it works
-
-# uv — installs Python and project deps (much faster than pip)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# Reopen terminal afterwards, then:
-uv --version  # should print 0.4+
+curl -LsSf https://astral.sh/uv/install.sh | sh   # reopen terminal afterwards
+uv --version   # should print 0.4+
 ```
 
-### Critical warnings — read before starting
+### Critical warnings
 
-1. **Python MUST be arm64 native, not x86_64 under Rosetta.**
+1. **Python MUST be arm64 native.**
    ```bash
    python3 -c "import platform; print(platform.machine())"
    ```
-   - Must print `arm64`. If it prints `x86_64` you're running Python under Rosetta — `mlx-whisper` will not work on Apple Silicon.
-   - Fix: `brew install python@3.12` and remove any system/Anaconda Python from your PATH. `uv` will pick up the right one automatically when you run `uv sync`.
+   Must print `arm64`. If it prints `x86_64`, you're under Rosetta —
+   `mlx-whisper` will not work. Fix: `brew install python@3.12` and
+   remove any Anaconda Python from your PATH.
 
-2. **macOS 13.5+ is required for `mlx-whisper`.**
-   - Older versions break the install with cryptic errors.
-   - Check your version: System Settings → General → About → macOS version.
+2. **macOS 13.5+ required** for `mlx-whisper` wheels.
 
-3. **First model run downloads ~600 MB** (`mlx-community/whisper-large-v3-turbo`) into `~/.cache/huggingface/`. Make sure you have disk space.
+3. **First Whisper-large run downloads ~600 MB** into
+   `~/.cache/huggingface/`. Make sure you have disk space.
 
-4. **Set git identity locally** (so commits are attributed to you):
-   ```bash
-   git config user.name "Your Name"
-   git config user.email "your@email"
-   ```
-
----
-
-### Cloning
+### Install the project
 
 ```bash
-git clone https://github.com/<your-github-username>/youtube-transcribe.git
+git clone https://github.com/nekith78/youtube-transcribe.git
 cd youtube-transcribe
+uv sync                          # base install
+uv sync --extra dev              # + pytest, coverage
+uv sync --extra instagram        # + instaloader (IG profile fallback)
+uv sync --extra diarization      # + pyannote.audio (speaker labels)
+uv sync --extra webui            # + gradio (experimental UI)
+uv sync --extra ocr              # + pytesseract / easyocr
 ```
 
-⚠️ **Don't run `uv sync` immediately** — `pyproject.toml` doesn't exist yet. It gets created in **Task 1** of the plan.
+You can pass multiple `--extra` flags together.
 
----
+### Configure backends
 
-### Continuing implementation in Claude Code
-
-Open Claude Code in the cloned repo directory. Paste this prompt verbatim:
-
-> Я продолжаю работу с этим проектом на новой машине (Mac M-series). Изучи `docs/specs/2026-05-08-youtube-transcribe-design.md` и `docs/plans/2026-05-08-youtube-transcribe.md` — это спека и план реализации. Реализация **ещё не начиналась** (ни один Task из плана не выполнен). Запусти skill `superpowers:subagent-driven-development` и начинай выполнять план с Task 1, диспатчая отдельный subagent на каждую задачу с ревью между задачами.
-
-Claude will:
-1. Read both docs.
-2. Invoke the `superpowers:subagent-driven-development` skill.
-3. Dispatch a subagent for Task 1 (`pyproject.toml`).
-4. Review the result, then dispatch Task 2, and so on.
-
-You stay in the driver's seat — Claude pauses for your review after each task.
-
----
-
-## What if something breaks
-
-| Symptom | Cause + fix |
-|---|---|
-| `uv` install fails | Install Python directly: `brew install python@3.12`, then run the `uv` install script again. |
-| `uv sync` errors on `mlx-whisper` | Confirm warning #1 (arm64 Python) and warning #2 (macOS ≥13.5). |
-| Tests fail in Phase 2 (foundations) | Likely deps mismatch. Try `uv sync --reinstall` and retry. |
-| `yt-dlp` returns 403 / "sign in to confirm not a bot" | YouTube anti-bot rotation — covered in plan Task 7. Fix: `--cookies-from-browser chrome` (or firefox/safari). |
-| `mlx-whisper.transcribe` crashes mid-run | Capture stderr; this is platform-specific and likely needs a Mac-only fix. Add a new task at the end of the plan with the fix. |
-| Mac-specific bug not in the plan | Capture stdout/stderr, document in commit message, optionally add a new Task at the end of the plan. |
-
----
-
-## Recovery points (for after Phase 6 / Phase 7)
-
-These will be created during plan execution — listed here for reference:
-
-- **Tag `v0.1.0-pre-mac`** (Task 27) — last known-good Windows state before Mac validation. Reset to this if Mac validation breaks something.
-- **Tag `v0.1.0`** (Task 30) — first public release after Mac validation passes.
-
-Reset commands (only if needed):
 ```bash
-git reset --hard v0.1.0-pre-mac
-git push --force-with-lease origin main   # only if you really need to rewind
+uv run youtube-transcribe config wizard   # first-time setup, asks for keys
+uv run youtube-transcribe config show     # see current state + masked keys
 ```
+
+Or set keys directly:
+
+```bash
+uv run youtube-transcribe config set-key gemini   # prompts for key
+uv run youtube-transcribe config set-key groq
+# ... openai / deepgram / assemblyai / anthropic
+```
+
+Keys are stored in `~/.youtube-transcribe/.env` with mode 0600.
+
+---
+
+## First-time setup on Windows / Linux
+
+Same as Mac except:
+
+- `ffmpeg` install: `choco install ffmpeg` (Windows), `apt install ffmpeg` (Ubuntu).
+- `mlx-whisper` is **not installed** on these platforms — PEP 508 markers
+  route to `faster-whisper` instead (CPU or CUDA, depending on hardware).
+- Windows: `irm https://astral.sh/uv/install.ps1 | iex` for uv.
+
+---
+
+## Cookies setup (Instagram / TikTok)
+
+Both platforms need cookies for profile listing. Export from your
+browser using the "Get cookies.txt LOCALLY" Chrome/Firefox extension,
+then:
+
+```bash
+uv run youtube-transcribe subscribes cookies set instagram /path/to/ig-cookies.txt
+uv run youtube-transcribe subscribes cookies set tiktok    /path/to/tt-cookies.txt
+uv run youtube-transcribe subscribes cookies show
+```
+
+The file is copied to `~/.youtube-transcribe/<platform>-cookies.txt`
+with mode 0600.
+
+**Strict file-only.** We do NOT support `--cookies-from-browser` —
+that flag reads the entire browser cookie store into process memory.
+Export the specific cookies you want; never grant blanket access.
+
+---
+
+## Common dev tasks
+
+```bash
+uv run pytest                              # full test suite (~25s)
+uv run pytest tests/test_factory.py -v     # one file
+uv run pytest -k smart -v                  # by keyword
+bash scripts/qa.sh phase8a                 # manual phase regression
+RUN_E2E_SMOKE=1 uv run pytest -v           # include real-network e2e (rare)
+```
+
+```bash
+uv run youtube-transcribe --help           # see all commands
+uv run youtube-transcribe transcribe       # interactive prompt
+uv run youtube-transcribe batch            # interactive multi-URL prompt
+uv run youtube-transcribe research         # interactive query prompt
+```
+
+---
+
+## Architecture invariants — don't break these
+
+1. **Skill name `youtube-transcribe` (kebab); Python package
+   `youtube_transcribe` (snake).** Both. Use by context.
+2. **Cookies file-only**, never `cookies-from-browser`.
+3. **`uv.lock` and `.python-version` are NOT committed** — each
+   platform resolves its own.
+4. **`mlx-whisper` gated by `sys_platform == 'darwin' and
+   platform_machine == 'arm64'`.** `faster-whisper` is the symmetric
+   marker. Never `import` them unconditionally.
+5. **All user-facing CLI strings in English** (v0.8 migration).
+   Comments/docstrings also English.
+6. **`smart` backend downloads audio before falling back** (v0.8 fix).
+   Non-subtitles backends can't accept URLs.
 
 ---
 
 ## Working with the spec/plan when something is unclear
 
-- **Spec questions** → re-read the relevant numbered section of `docs/specs/2026-05-08-youtube-transcribe-design.md`. Sections 1–19, indexed.
-- **Task questions** → see the corresponding Task in `docs/plans/2026-05-08-youtube-transcribe.md`. Each task is self-contained with file paths, code, and tests.
-- **Architectural questions** → spec Section 4 (file structure) and Section 5 (8 backends).
-- **Backend-switching behavior** → spec Section 7 + plan Task 22 (SKILL.md).
+Original design: `docs/specs/2026-05-08-youtube-transcribe-design.md`
+(v0.1 baseline). v0.2 through v0.8 added features per their own
+spec/plan docs in the same directory.
 
-Trust the spec; the plan was written from it. If they disagree, the spec is the source of truth — open an issue to fix the plan.
+For runtime behavior, prefer reading the code over the spec — v0.8
+diverges from v0.1's design in several places (cookies-file-only,
+interactive prompts, smart backend download).
+
+---
+
+## Pre-push contract
+
+Before `git push origin main`:
+- `uv run pytest` — must be green.
+- For features that touch security/IO: invoke the global skill
+  `git-cross-os` (it runs `code-reviewer` + `security-review`).

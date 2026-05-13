@@ -80,6 +80,16 @@ uv tool install git+https://github.com/nekith78/youtube-transcribe
 - `ffmpeg` — required for audio extraction. Install: `brew install ffmpeg` (Mac), `choco install ffmpeg` (Windows), `apt install ffmpeg` (Ubuntu).
 - macOS 13.5+ for Apple Silicon path.
 
+**Optional extras:**
+
+```bash
+uv sync --extra instagram       # instaloader fallback for IG profile listing when yt-dlp's extractor is broken upstream
+uv sync --extra diarization     # pyannote.audio for speaker labels (HF token + model license required)
+uv sync --extra webui           # Gradio web UI
+uv sync --extra ocr             # OCR on keyframes (pytesseract + easyocr)
+uv sync --extra dev             # pytest, coverage
+```
+
 ---
 
 ## Quick start
@@ -111,6 +121,51 @@ youtube-transcribe transcribe /path/to/lecture.mp4 --language ru
 ```
 
 Output goes to `./transcripts/` — one `.txt` (plain text with timestamps) and one `.srt` per video.
+
+### Progress UI (v0.8)
+
+Single-video `transcribe` shows a spinner with stage labels while it works:
+
+```
+⠋ Downloading audio...
+⠙ Transcribing via gemini...
+⠹ Post-processing...
+✓ gemini | language=en | duration=58.8s
+```
+
+Modes:
+- **Default** — rich.status spinner. Compact, non-disruptive.
+- **`--verbose`** — spinner OFF; raw yt-dlp / SDK output + dim stage
+  lines (`· Downloading audio...`). Use for debugging.
+- **Non-TTY** (pipe, CI, Claude Code subprocess) — auto-degrades to
+  plain text writes.
+
+`batch`, `research`, `subscribes update` use a per-video `rich.Progress`
+bar with `ok=N fail=M` counters (different UI, same idea — you always
+see the pipeline is alive).
+
+### FAQ: "HF_TOKEN" warning on first run
+
+You may see:
+
+```
+Warning: You are sending unauthenticated requests to the HF Hub.
+Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+```
+
+`sentence-transformers` (used for trigger-phrase detection) downloads
+its model from Hugging Face on first run. Anonymous downloads work fine
+but with rate limits. The warning is harmless — it does not stop
+transcription. Two ways to silence it:
+
+1. **Ignore** — the model is cached after first run; the warning
+   never affects output.
+2. **Register a free token** — make an account at
+   [huggingface.co](https://huggingface.co), Settings → Access Tokens
+   → New token (read-only), then add to `~/.youtube-transcribe/.env`:
+   ```
+   HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
 
 ---
 
@@ -398,6 +453,48 @@ youtube-transcribe history show <run-id>
 The `subscribes` store lives at `~/.youtube-transcribe/subscribes.toml`
 and is safe to hand-edit; CLI mutations preserve your comments via
 `tomlkit`.
+
+### Instagram & TikTok subscribes (v0.8)
+
+Both platforms need cookies (no anonymous access for profile listing):
+
+```bash
+# Export cookies.txt from your browser via the
+# "Get cookies.txt LOCALLY" extension, then:
+youtube-transcribe subscribes cookies set instagram /path/to/ig-cookies.txt
+youtube-transcribe subscribes cookies set tiktok    /path/to/tt-cookies.txt
+```
+
+Add channels:
+
+```bash
+youtube-transcribe subscribes add https://www.instagram.com/natgeo/   --group walk-ig
+youtube-transcribe subscribes add https://www.tiktok.com/@anthropic    --group dev
+```
+
+Update only one platform at a time:
+
+```bash
+youtube-transcribe subscribes update --platform instagram --days 7 \
+  --backend whisper-local --yes --no-analyze
+```
+
+**Instagram fallback.** yt-dlp's IG profile extractor is periodically
+broken upstream. When that happens we automatically fall back to
+`instaloader` — install it once:
+
+```bash
+uv sync --extra instagram
+```
+
+You'll see a one-time per-process warning when the fallback activates,
+with rate-limit guidance. It's intended for occasional fetches — IG
+will flag accounts that scrape aggressively.
+
+**Cookies are strict file-only.** We deliberately do NOT support
+`--cookies-from-browser` — it reads your entire browser cookie store
+into process memory. Export the IG/TT cookies you want via a browser
+extension and register that single file.
 
 ---
 

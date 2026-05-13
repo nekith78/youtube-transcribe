@@ -3,6 +3,78 @@
 All notable changes to youtube-transcribe will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.0] — 2026-05-14
+
+### Added
+- **Instagram & TikTok in `subscribes`** — `subscribes add` accepts
+  IG profile URLs and TikTok user URLs. Per-platform fetch dispatch
+  in `subscribes/pipeline.py`: YouTube via RSS (no cookies), Instagram
+  and TikTok via yt-dlp with the user's registered Netscape
+  `cookies.txt`. `subscribes update --platform {youtube|instagram|tiktok}`
+  filters to a single platform.
+- **Instagram fallback via instaloader** — when yt-dlp's IG profile
+  extractor is marked broken upstream (which happens periodically),
+  we fall back to instaloader for profile listing. Opt-in extra:
+  `uv sync --extra instagram`. Prints a one-time per-process warning
+  on first fallback ("intended for occasional fetches, not bulk
+  scraping"). See `subscribes/instagram_loader.py`.
+- **Interactive URL/query prompts** — `transcribe`, `batch`,
+  `subscribes add`, and `research` accept an empty positional and
+  prompt instead. Lets users paste long URLs after running the
+  command (keeps them out of shell command lines / shell history).
+  Non-TTY callers without args exit 2 with a clear message so CI
+  scripts fail fast. See `shared/prompts.py`.
+- **Spinner progress for single-video `transcribe`** — `rich.status`
+  spinner with stage labels (Downloading audio... / Transcribing via
+  X... / Post-processing...). `--verbose` switches to plain dim
+  print lines so raw yt-dlp / SDK output stays readable. Non-TTY
+  degrades automatically. See `shared/progress.py`.
+- **Cookies onboarding wizard** — `subscribes cookies set <platform>`
+  with interactive `questionary.path()` prompt (Tab-completion +
+  drag-and-drop). Validates Netscape format before saving. Stores
+  registered file at `~/.youtube-transcribe/<platform>-cookies.txt`
+  with mode 0600. See `subscribes/cookies_onboarding.py`.
+
+### Changed
+- **Security: strict file-only cookies.** All paths that previously
+  accepted `--cookies-from-browser` now require an explicit Netscape
+  `cookies.txt` file (`--cookies-file <path>` for transcribe/batch;
+  `subscribes cookies set <platform> <path>` for IG/TT). Rationale:
+  `cookies-from-browser` reads the user's entire browser cookie store
+  into process memory — even on macOS where Keychain prompts, an
+  "Always Allow" grant silently leaks all unrelated cookies. We
+  refuse to take that risk; the cost is one manual cookies-export
+  step.
+- **All user-facing CLI strings migrated to English.** Wizard, error
+  messages, status lines, prompts, help text — previously a Russian /
+  English mix, now English-only. Industry standard for CLIs with a
+  global audience.
+- **`smart` backend fallback now downloads audio.** Previously
+  `transcribe URL --backend smart` failed with "Audio file not found:
+  <url>" when subtitles fast-path didn't succeed (e.g. YouTube
+  IpBlocked on TimedText). All non-subtitles backends require a local
+  audio file; `run_smart` now downloads into a temp directory before
+  invoking the fallback backend.
+- **yt-dlp broken-extractor diagnostic.** `_diagnose_ytdlp_error` now
+  checks for "Unable to extract data" / "marked as broken" at the
+  TOP of the hint ladder, before generic geo/country/auth heuristics
+  could win on misleading sub-strings of the same stderr. Without
+  this, the subscribes pipeline's broken-extractor detection never
+  fired for IG and the instaloader fallback was silent.
+- **Stale `yt-tr` references removed from README.** The real CLI
+  binary has always been `youtube-transcribe`; `yt-tr` was never an
+  alias. 18 occurrences corrected.
+
+### Dependencies
+- `instaloader>=4.13` — new optional extra `[instagram]`.
+
+### Fixed
+- `subscribes` pipeline now propagates broken-extractor exceptions
+  from `_fetch_via_yt_dlp` instead of swallowing them. Enables the
+  instaloader fallback to actually fire for Instagram.
+
+---
+
 ## [0.7.0] — 2026-05-12
 
 ### Added

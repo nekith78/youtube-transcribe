@@ -142,11 +142,14 @@ Post-hoc LLM pass on already-transcribed material. Most chat-Claude flows
 don't need this — read `combined.md` directly. Useful for re-running with a
 different prompt or selecting a subset.
 
+Usage: `analyze [SOURCE] [flags]` — SOURCE is positional: a transcript
+file `*.txt`, a batch directory, or omit it with `--latest`.
+
 ```
-analyze --transcript <file>.txt --prompt "..." --backend ollama
+analyze /path/to/transcript.txt --prompt "..." --backend ollama
 analyze --latest --all --prompt-file p.md --backend gemini
-analyze --batch <batch_dir> --select "1,3,5-7" --prompt "..."
-analyze --append-to <existing-analysis.md> --prompt "another angle"
+analyze /path/to/batch_dir --select "1,3,5-7" --prompt "..."
+analyze --append-to <existing-analysis.md> --prompt "another angle" /path/to/batch_dir
 ```
 
 ### `history` (v0.7)
@@ -375,6 +378,36 @@ Examples that exit 2:
 - `research --days N --since YYYY-MM-DD` (mutex)
 - `subscribes update` on a channel with no state, without `--days` / `--since`
 - `analyze` with neither `--all` nor `--select` in a non-TTY
+- `transcribe` / `batch` / `subscribes add` / `research` invoked without a
+  positional arg in a non-TTY context (v0.8: interactive prompt only
+  fires in a TTY; non-TTY exits with "Argument required: pass as
+  positional argument or run from a TTY for interactive prompt")
+
+---
+
+## 7a. Progress UI and verbose mode (v0.8)
+
+Single-video `transcribe` shows a Rich spinner with stage labels at
+each phase boundary (download / transcribe / post-process). Driver:
+[`shared/progress.py`](../skills/youtube_transcribe/shared/progress.py)
+and `on_stage` callback in
+[`pipeline.run_pipeline`](../skills/youtube_transcribe/pipeline.py).
+
+| Mode | Spinner | Raw output |
+|---|---|---|
+| Default (TTY) | rich.status with `.update(msg)` | suppressed |
+| `--verbose` (TTY) | OFF | yt-dlp / SDK output + dim `· msg` print per stage |
+| Non-TTY (pipe, CI, Claude Code subprocess) | rich.status auto-degrades | normal output |
+
+`batch`, `research`, `subscribes update` use a per-video
+`rich.Progress` bar (description, percent, `ok=N fail=M` counters)
+instead — different UI, same intent.
+
+**HF_TOKEN warning on first run** is benign. `sentence-transformers`
+downloads its model from Hugging Face on first call; anonymous
+downloads work but with rate limits. Cached after first run. Users
+can register a free `HF_TOKEN` in `~/.youtube-transcribe/.env` to
+silence the warning.
 
 ---
 
@@ -396,6 +429,18 @@ Examples that exit 2:
   [v0.7 fix `5551a5e`](https://github.com/nekith78/youtube-transcribe/commit/5551a5e)
   for the bug they hide. The `_run_batch_pipeline` reads
   `opts.get("backend")`, not `opts.get("backend_opt")`.
+- **Cookies are strict file-only (v0.8).** All paths that previously
+  accepted `--cookies-from-browser` now require an explicit Netscape
+  `cookies.txt`. `transcribe`/`batch` take `--cookies-file <path>`;
+  `subscribes` reads from `~/.youtube-transcribe/<platform>-cookies.txt`
+  registered via `subscribes cookies set <platform> <path>`.
+  Rationale: `cookies-from-browser` reads the user's entire browser
+  cookie store into process memory — refusing that is non-negotiable.
+- **`smart` backend downloads on fallback (v0.8).** When subtitles
+  fast-path fails AND the input is a URL, `run_smart` downloads audio
+  into a temp directory before invoking the fallback backend (whisper-
+  local / gemini / etc.). All non-subtitles backends call
+  `Path(audio_or_url).exists()` — they cannot accept URLs.
 
 ---
 
