@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sys
-import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -295,11 +294,13 @@ def _append_history(
     videos_found, prompt, analyze_backend, status: str = "ok",
 ) -> None:
     p = Path.home() / ".youtube-transcribe" / "history.toml"
-    # Short IDs (`r-XXXXXX` / `s-XXXXXX`) fit a 16-col Rich table without
-    # truncation. Full timestamp lives in the `timestamp` field — the ID
-    # only needs to be unique.
+    # ID format: `r-MMDD-HHMMSS` / `s-MMDD-HHMMSS` — 13 chars. Conveys
+    # type + when at a glance, fits a Rich table column without truncation,
+    # second-precision gives collision-free uniqueness for CLI cadence.
+    # Year omitted: it's already in the `timestamp` field and `When` column.
     prefix = {"research": "r", "subscribes": "s"}.get(type_, type_[:1])
-    run_id = f"{prefix}-{uuid.uuid4().hex[:6]}"
+    ts = datetime.now(timezone.utc).strftime("%m%d-%H%M%S")
+    run_id = f"{prefix}-{ts}"
     entry = RunEntry(
         id=run_id, type=type_,
         timestamp=datetime.now(timezone.utc).isoformat(),

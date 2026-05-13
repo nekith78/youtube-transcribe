@@ -19,7 +19,6 @@ state and the next incremental run still asked for --days.
 """
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -328,9 +327,9 @@ def _append_history(
     status: str = "ok",
 ) -> None:
     p = Path.home() / ".youtube-transcribe" / "history.toml"
-    # See research.pipeline._append_history for the rationale: short IDs
-    # like `s-XXXXXX` fit a Rich-table column without truncation.
-    run_id = f"s-{uuid.uuid4().hex[:6]}"
+    # See research.pipeline._append_history for the format rationale.
+    ts = datetime.now(timezone.utc).strftime("%m%d-%H%M%S")
+    run_id = f"s-{ts}"
     entry = RunEntry(
         id=run_id, type="subscribes",
         timestamp=datetime.now(timezone.utc).isoformat(),
