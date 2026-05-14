@@ -23,4 +23,4 @@ def test_version_matches_pyproject():
     from `pyproject.toml`.
     """
     import skills.neurolearn
-    assert skills.neurolearn.__version__.startswith("0.9.")
+    assert skills.neurolearn.__version__.startswith("0.10.")

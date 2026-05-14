@@ -259,11 +259,29 @@ def transcribe_cmd(audio_or_url: str | None, **opts) -> None:
     if opts.get("vision_prompt_path_opt"):
         cli_overrides["vision_prompt_path"] = opts["vision_prompt_path_opt"]
 
+    # Default preset = smart, OR the user's explicit --preset flag.
+    user_passed_preset = opts.get("preset") is not None
     preset_name = opts.get("preset") or "smart"
     if preset_name not in list_preset_names():
         console.print(f"[red]Unknown preset: {preset_name}[/red]. "
                       f"Known: {list_preset_names()}")
         sys.exit(2)
+
+    # Tutorial auto-detect: when running smart preset without explicit
+    # user override, check the transcript for tutorial-action density. If
+    # the video looks like a UI tutorial, promote to the tutorial preset
+    # so frame extraction uses asymmetric offsets + Claude fallback fires.
+    # Disabled if the user passed --preset explicitly (respect their choice).
+    if not user_passed_preset and preset_name == "smart":
+        from skills.neurolearn.detection.tutorial_detect import detect_tutorial
+        signals = detect_tutorial(result.segments)
+        if signals.is_tutorial:
+            preset_name = "tutorial"
+            console.print(
+                f"[dim]· Auto-detected tutorial "
+                f"({signals.action_count} action mentions, "
+                f"{signals.density_per_min}/min) — using tutorial preset[/dim]"
+            )
 
     config_path_opt = opts.get("config_path")
     cfg_v02, info_msgs = resolve_with_env_checks(

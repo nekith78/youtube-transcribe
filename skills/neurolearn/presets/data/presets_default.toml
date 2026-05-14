@@ -39,3 +39,20 @@ frames_per_window = 5
 max_windows_per_video = 50
 quality_check = true
 quality_perplexity = true
+
+# === TUTORIAL ===
+# Optimized for UI / software tutorials with explicit action speech
+# ("click here", "press save", "нажимаем", "выбираем"). Speech-anchored
+# asymmetric frame offsets capture before-state, the click moment, and
+# the UI-settled-after state. Claude fallback re-checks low-confidence
+# segments (small text, similar-looking elements).
+# Auto-applied by the smart preset when the transcript contains a high
+# density of action triggers; set --preset tutorial to force.
+[presets.tutorial]
+transcribe_backend = "whisper-local"
+vision_backend = "gemini"
+detect_method = "keywords_only"
+frames_per_window = 3
+max_windows_per_video = 30
+asymmetric_frames = true
+claude_fallback = true

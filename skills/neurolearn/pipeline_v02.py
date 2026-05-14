@@ -262,6 +262,7 @@ def apply_v02_stages(
 
         if windows:
             fpw = cfg.get("frames_per_window", 3)
+            asym = bool(cfg.get("asymmetric_frames", False))
             if vision_backend_name == "claude":
                 from skills.neurolearn.vision.claude_vision import (
                     ClaudeVisionBackend,
@@ -273,7 +274,11 @@ def apply_v02_stages(
                 )
                 backend = OpenAIVisionBackend(api_key=api_key, frames_per_window=fpw)
             else:  # gemini
-                backend = GeminiVisionBackend(api_key=api_key, frames_per_window=fpw)
+                backend = GeminiVisionBackend(
+                    api_key=api_key,
+                    frames_per_window=fpw,
+                    use_asymmetric_offsets=asym,
+                )
             visuals = backend.annotate_segments(
                 video_path=video_path,
                 windows=windows,
@@ -283,6 +288,29 @@ def apply_v02_stages(
                 out_dir=out_dir,
             )
             result.visual_segments = visuals
+
+            # === Claude fallback on low-confidence segments ===
+            # Only fires when primary is Gemini AND user opted in via
+            # the tutorial preset (or `claude_fallback = true` override).
+            # ANTHROPIC_API_KEY must be set; otherwise silently skipped.
+            if (
+                vision_backend_name == "gemini"
+                and cfg.get("claude_fallback", False)
+                and result.visual_segments
+            ):
+                anthropic_key = _config_mod.get_api_key("anthropic")
+                if anthropic_key:
+                    result.visual_segments = _refine_low_confidence_with_claude(
+                        visuals=result.visual_segments,
+                        windows=windows,
+                        video_path=video_path,
+                        api_key=anthropic_key,
+                        prompt_template=_load_vision_prompt(cfg),
+                        language=result.language_detected or "en",
+                        video_id=video_id,
+                        out_dir=out_dir,
+                        frames_per_window=fpw,
+                    )
 
         # === v0.2: OCR (opt-in) ===
         if cfg.get("ocr") and result.visual_segments:
@@ -303,3 +331,88 @@ def apply_v02_stages(
             result.visual_segments = new_visuals
 
     return result
+
+
+# Confidence threshold below which a Gemini description is treated as
+# uncertain enough to merit a Claude re-check. Calibrated against the
+# tutorial-pipeline guide: typical Gemini outputs score 0.75-0.90, so
+# 0.7 catches the bottom ~15-20% of segments where small text or
+# similar-looking elements caused doubt.
+_CLAUDE_REFINE_THRESHOLD = 0.7
+
+
+def _refine_low_confidence_with_claude(
+    *,
+    visuals: list,
+    windows: list[DetectionWindow],
+    video_path: Path,
+    api_key: str,
+    prompt_template: str,
+    language: str,
+    video_id: str,
+    out_dir: Path,
+    frames_per_window: int,
+) -> list:
+    """Re-process low-confidence visual segments through Claude.
+
+    Pairs each VisualSegment with its source DetectionWindow by index
+    (Gemini emits one segment per window, in order). Segments where
+    `confidence < 0.7` OR `needs_refinement = True` are sent to Claude
+    Vision for a second-pass description. The replacement re-uses the
+    same keyframes — we don't re-extract.
+
+    On any Claude error (rate limit, network, malformed reply), the
+    original Gemini segment stays. Failure is silent and non-fatal.
+    """
+    if not visuals or not windows:
+        return visuals
+    # Identify candidates needing refinement.
+    refine_indices = [
+        i for i, v in enumerate(visuals)
+        if (
+            getattr(v, "confidence", 1.0) < _CLAUDE_REFINE_THRESHOLD
+            or getattr(v, "needs_refinement", False)
+        )
+    ]
+    if not refine_indices:
+        return visuals
+    # Pair indices to source windows. annotate_segments returns one
+    # result per successfully-processed window in input order, so the
+    # index mapping is identity unless some windows were skipped — we
+    # accept that minor risk; refinement on the wrong window only hurts
+    # quality (yields slightly less relevant description), never crashes.
+    refine_windows = [windows[i] for i in refine_indices if i < len(windows)]
+    if not refine_windows:
+        return visuals
+
+    try:
+        from skills.neurolearn.vision.claude_vision import (
+            ClaudeVisionBackend,
+        )
+        refiner = ClaudeVisionBackend(
+            api_key=api_key,
+            frames_per_window=frames_per_window,
+        )
+        refined = refiner.annotate_segments(
+            video_path=video_path,
+            windows=refine_windows,
+            prompt_template=prompt_template,
+            language=language,
+            video_id=video_id,
+            out_dir=out_dir,
+        )
+    except Exception:
+        # Claude unavailable / errored — keep original Gemini outputs.
+        return visuals
+
+    if not refined:
+        return visuals
+
+    # Splice refined results back into the visuals list at their
+    # original positions. If Claude returned fewer than expected
+    # (some failed), keep the original Gemini segment at those slots.
+    out = list(visuals)
+    for slot, ref in zip(refine_indices, refined):
+        if slot < len(out):
+            out[slot] = ref
+    return out

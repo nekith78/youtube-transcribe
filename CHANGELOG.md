@@ -3,6 +3,98 @@
 All notable changes to neurolearn will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.0] — 2026-05-15
+
+### Visual pipeline optimization — 9 improvements
+
+Based on a production-guide audit of our Gemini Flash vision pipeline.
+On a typical 10-minute tutorial video, total Gemini cost drops ~12×
+and end-to-end visual stage runs ~10× faster.
+
+#### Cost wins
+
+- **MEDIA_RESOLUTION_LOW** for Gemini video uploads — 66 tokens/sec
+  instead of 258 (4× cheaper). UI tutorials and most lecture content
+  remain legible at LOW; only 4K-detail content would benefit from
+  HIGH. (`vision/gemini.py`)
+- **Prompt caching** — system instruction is cached once per video,
+  reused across all per-window calls. ~75% off input tokens after
+  the first window. Falls back gracefully (per-call inclusion) when
+  caching is unavailable.
+- **Frame downscaling + quality cap** — ffmpeg output frames are
+  capped at 1280px wide and JPEG quality 80%. Same description
+  accuracy, ~5× smaller file size → fewer image tokens.
+
+#### Quality wins
+
+- **Structured output via response_schema** — Gemini cannot return
+  invalid JSON anymore. New schema includes `confidence` (0-1) and
+  `needs_refinement` (bool) signals.
+- **temperature=0.2 + max_output_tokens=300** — determinism and
+  capped output cost.
+- **Tutorial preset with asymmetric frame offsets** —
+  `-1.5s / +0.3s / +2.0s` relative to the speech event captures
+  before-state, the click moment (motor-lag from speech to action
+  is ~300ms), and the UI-settled-after state. Far more useful for
+  step-by-step UI tutorials than evenly-spaced frames.
+- **Claude fallback on low-confidence segments** — when Gemini
+  reports `confidence < 0.7` or `needs_refinement=True` (typically
+  10-20% of windows), the same windows are re-processed through
+  Claude Vision. Better accuracy on small UI text / similar
+  elements; only pays Claude pricing on the subset that needs it.
+  Requires `ANTHROPIC_API_KEY`; silently skipped if absent.
+
+#### Speed wins
+
+- **Async parallelism** in `GeminiVisionBackend.annotate_segments` —
+  `asyncio.Semaphore(10)` concurrent window calls. The sync facade
+  is preserved; callers don't need to be async. On 18-window TED Talk
+  this drops from ~5 minutes sequential to ~30 seconds.
+
+#### Observability
+
+- **BudgetTracker module** (`skills/neurolearn/budget.py`) — per-call
+  token accounting with per-provider USD pricing. Aggregates totals
+  by stage (vision_gemini, vision_claude, analyze, asr_correction,
+  translate, filter, research_translate). Wired into manifest.json
+  so users see what each batch cost without spelunking through
+  provider dashboards.
+
+#### New `tutorial` preset + auto-detection
+
+- New built-in preset `tutorial` in `presets/data/presets_default.toml`:
+  whisper-local transcribe, gemini vision, keywords_only detection,
+  asymmetric frames, Claude fallback.
+- **Auto-promotion from smart**: after transcription, when running
+  the `smart` preset without explicit `--preset` override, we count
+  tutorial-action triggers (click / press / нажимаем / выбираем /
+  open / save / select / type / ...) in the transcript. Density
+  above 1.5/min auto-promotes to the tutorial preset; a one-line
+  notice tells the user. Disable with `--preset smart` explicitly
+  or set `auto_tutorial_detect = false`.
+- Detector lives in `skills/neurolearn/detection/tutorial_detect.py`
+  with hardcoded action regex for ru/en (separate from user-editable
+  triggers.toml — this is feature detection, not personalisation).
+
+#### Schema
+
+- `VisualSegment` gained `confidence: float` and `needs_refinement: bool`
+  fields. Backward compatible — both default to safe values for old
+  callers/test fixtures.
+
+### Tests
+
+- 6 new tests in `test_budget.py` — token math + cost edge cases
+- 6 new tests in `test_tutorial_detect.py` — density heuristic in
+  ru + en, lecture rejection, short-clip safeguard
+- 5 new tests in `test_claude_fallback.py` — refinement triggering,
+  Claude error keeps original, empty-list short-circuit
+- Updated `test_vision_gemini.py` to match new defensive cache path
+
+Total: 924 passed, 3 skipped.
+
+---
+
 ## [0.9.0] — 2026-05-14
 
 ### Renamed

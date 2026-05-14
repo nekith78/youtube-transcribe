@@ -20,6 +20,14 @@ class VisualSegment:
     detected_objects: list[str] = field(default_factory=list)
     trigger_reason: str = ""
     importance: Importance = "medium"
+    # 0.0–1.0 — how sure the model is about its description.
+    # 1.0 = transcript + frames unambiguously confirm; 0.4 = uncertain which
+    # element; 0.0 = action not visible. Drives Claude-fallback escalation
+    # in the tutorial / smart pipelines (see pipeline_v02.apply_v02_stages).
+    confidence: float = 1.0
+    # True when the model itself flagged a frame as needing zoom/refinement
+    # (e.g. small text it couldn't read). Also drives Claude fallback.
+    needs_refinement: bool = False
 
 
 class VisionBackend(Protocol):

@@ -174,6 +174,40 @@ REGISTRY: list[OptionField] = [
         ),
         section="vision",
     ),
+    # === Tutorial / UI-action mode (v0.10) ===
+    OptionField(
+        key="asymmetric_frames", type=bool, default=False,
+        choices=None,
+        description=(
+            "Speech-anchored frame offsets (-1.5s / +0.3s / +2.0s) "
+            "instead of evenly spaced. Captures before-state, the click "
+            "moment (motor lag from speech), and post-action UI state. "
+            "Default on in the tutorial preset; off elsewhere."
+        ),
+        section="vision",
+    ),
+    OptionField(
+        key="claude_fallback", type=bool, default=False,
+        choices=None,
+        description=(
+            "After Gemini annotation, re-process low-confidence segments "
+            "(confidence < 0.7 or needs_refinement) through Claude. "
+            "Improves accuracy on small UI text / similar-looking elements "
+            "without paying Claude prices for the entire video."
+        ),
+        section="vision",
+    ),
+    OptionField(
+        key="auto_tutorial_detect", type=bool, default=True,
+        choices=None,
+        description=(
+            "When using the smart preset, count tutorial-action triggers "
+            "(click / press / нажимаем / выбираем / ...) in the transcript "
+            "and auto-switch to tutorial preset if density exceeds the "
+            "threshold. Set to false to disable auto-promotion."
+        ),
+        section="smart",
+    ),
 ]
 
 
