@@ -1,0 +1,41 @@
+# Built-in 4-tier presets. User overrides go to ~/.neurolearn/config.toml.
+
+default_preset = "smart"
+
+# === ECO ===
+[presets.eco]
+transcribe_backend = "subtitles"
+fallback_backend = "whisper-local"
+vision_backend = "off"
+detect_method = "keywords_only"
+quality_check = false
+max_windows_per_video = 0
+
+# === SMART (default) ===
+[presets.smart]
+transcribe_backend = "subtitles"
+fallback_backend = "whisper-local"
+quality_check = true
+subtitle_quality_threshold = 0.6
+vision_backend = "gemini"
+detect_method = "hybrid"
+frames_per_window = 3
+max_windows_per_video = 20
+
+# === STANDARD ===
+[presets.standard]
+transcribe_backend = "whisper-local"
+vision_backend = "gemini"
+detect_method = "hybrid"
+frames_per_window = 3
+max_windows_per_video = 30
+
+# === PREMIUM ===
+[presets.premium]
+transcribe_backend = "whisper-local"
+vision_backend = "gemini"
+detect_method = "llm_full_pass"
+frames_per_window = 5
+max_windows_per_video = 50
+quality_check = true
+quality_perplexity = true

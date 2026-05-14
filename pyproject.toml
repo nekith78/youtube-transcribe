@@ -1,14 +1,14 @@
 [project]
-name = "youtube-transcribe"
-version = "0.8.0"
-description = "Transcribe YouTube videos and local media via 8 interchangeable backends (Whisper local / subtitles / Gemini / Groq / OpenAI / Deepgram / AssemblyAI / custom)."
+name = "neurolearn"
+version = "0.9.0"
+description = "NEUROLEARN — learn from videos. Transcribe / analyze / research / subscribe to YouTube, Instagram, TikTok and local media via 8 interchangeable backends (Whisper local / subtitles / Gemini / Groq / OpenAI / Deepgram / AssemblyAI / custom)."
 readme = "README.md"
 # Upper bound `<3.14` is required by `scenedetect` 0.7 (no wheels for Python 3.14
 # as of 2026-05). Lift this when scenedetect adds 3.14 support.
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
-authors = [{ name = "youtube-transcribe contributors" }]
-keywords = ["whisper", "transcription", "youtube", "claude-code", "skill"]
+authors = [{ name = "NEUROLEARN contributors" }]
+keywords = ["whisper", "transcription", "youtube", "instagram", "tiktok", "research", "subscribes", "claude-code", "skill"]
 
 dependencies = [
     "click>=8.1",
@@ -72,7 +72,7 @@ ocr = [
 perplexity = []
 
 # Web UI — opt-in. Gradio + uvicorn together pull ~100 MB. Launches via
-# `youtube-transcribe webui` and binds to 127.0.0.1 by default.
+# `neurolearn webui` and binds to 127.0.0.1 by default.
 webui = [
     "gradio>=4.0.0",
 ]
@@ -95,7 +95,7 @@ instagram = [
 ]
 
 [project.scripts]
-youtube-transcribe = "skills.youtube_transcribe.transcribe:cli"
+neurolearn = "skills.neurolearn.transcribe:cli"
 
 [build-system]
 requires = ["hatchling>=1.24"]
@@ -103,7 +103,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["skills"]
-include = ["skills/youtube_transcribe/presets/data/*.toml"]
+include = ["skills/neurolearn/presets/data/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

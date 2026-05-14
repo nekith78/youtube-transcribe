@@ -1,14 +1,14 @@
 {
-  "name": "youtube-transcribe",
-  "version": "0.1.0",
-  "description": "Transcribe YouTube videos and local media via 8 interchangeable backends with offline default.",
+  "name": "neurolearn",
+  "version": "0.9.0",
+  "description": "NEUROLEARN — learn from videos. Transcribe / analyze / research / subscribe to YouTube, Instagram, TikTok, and local media via 8 interchangeable backends with an offline default.",
   "author": {
-    "name": "youtube-transcribe contributors"
+    "name": "NEUROLEARN contributors"
   },
   "license": "MIT",
-  "homepage": "https://github.com/nekith78/youtube-transcribe",
+  "homepage": "https://github.com/nekith78/neurolearn",
   "skills": [
-    "skills/youtube_transcribe"
+    "skills/neurolearn"
   ],
   "commands": [
     "commands/transcribe.md"
