@@ -171,6 +171,16 @@ def cli() -> None:
               type=click.Path(exists=True), default=None,
               help="Custom vision prompt template (placeholders {language}, "
                    "{transcript_snippet}, {start_sec}, {end_sec}).")
+@click.option("--video-type", "video_type_opt",
+              default=None,
+              help="Force a specific video type for vision analysis: "
+                   "tutorial | lecture | code | demo | interview | vlog | "
+                   "review | talking_head | generic. Default: auto-detect "
+                   "from transcript.")
+@click.option("--no-global-prefix", "no_global_prefix_opt",
+              is_flag=True, default=False,
+              help="With --vision-prompt: do NOT prepend the built-in "
+                   "global prefix. Use only the user-supplied template.")
 def transcribe_cmd(audio_or_url: str | None, **opts) -> None:
     """Transcribe a YouTube URL, supported video URL, or local audio/video file."""
     if not audio_or_url:
@@ -1123,6 +1133,14 @@ def _run_batch_pipeline(
               type=click.Path(exists=True), default=None,
               help="Custom vision prompt template (placeholders {language}, "
                    "{transcript_snippet}, {start_sec}, {end_sec}).")
+@click.option("--video-type", "video_type_opt",
+              default=None,
+              help="Force vision-prompt type: tutorial|lecture|code|demo|"
+                   "interview|vlog|review|talking_head|generic. "
+                   "Default: auto-detect from transcript.")
+@click.option("--no-global-prefix", "no_global_prefix_opt",
+              is_flag=True, default=False,
+              help="With --vision-prompt: skip the built-in global prefix.")
 @click.option("--then-analyze", "then_analyze", is_flag=True, default=False,
               help="After batch completes, run `analyze` on the produced folder.")
 @click.option("--prompt", "analyze_prompt", default=None,
@@ -1221,6 +1239,10 @@ def batch_cmd(
         cli_overrides["translate_backend"] = opts["translate_backend_opt"]
     if opts.get("vision_prompt_path_opt"):
         cli_overrides["vision_prompt_path"] = opts["vision_prompt_path_opt"]
+    if opts.get("video_type_opt"):
+        cli_overrides["video_type"] = opts["video_type_opt"]
+    if opts.get("no_global_prefix_opt"):
+        cli_overrides["no_global_prefix"] = True
 
     preset_name = opts.get("preset") or "smart"
     if preset_name not in list_preset_names():

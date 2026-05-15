@@ -24,3 +24,7 @@ def test_version_matches_pyproject():
     """
     import skills.neurolearn
     assert skills.neurolearn.__version__.startswith("0.10.")
+    # Stricter: v0.10.1+ to keep this honest after future patch releases.
+    parts = skills.neurolearn.__version__.split(".")
+    assert int(parts[1]) >= 10
+    assert int(parts[2]) >= 1

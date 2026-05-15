@@ -22,22 +22,51 @@ from skills.neurolearn.detection.window_merge import (
 )
 from skills.neurolearn.quality.heuristic_checker import HeuristicChecker
 from skills.neurolearn.vision.gemini import GeminiVisionBackend
-from skills.neurolearn.vision.prompts import DEFAULT_PROMPT
+from skills.neurolearn.vision.prompts import (
+    DEFAULT_VIDEO_TYPE, format_prompt, load_prompt,
+)
 
 
-def _load_vision_prompt(cfg: dict[str, Any]) -> str:
-    """Return user-supplied vision prompt or DEFAULT_PROMPT.
+def _autodetect_video_type(result) -> str:
+    """Auto-detect video type from transcript segments. Defensive — any
+    failure falls back to 'generic' so the pipeline never breaks."""
+    try:
+        from skills.neurolearn.detection.video_type_detect import (
+            detect_video_type,
+        )
+        sig = detect_video_type(result.segments)
+        return sig.video_type
+    except Exception:
+        return DEFAULT_VIDEO_TYPE
 
-    Path errors fall back to default; misconfiguration shouldn't break
-    the pipeline.
+
+def _resolve_vision_prompt(cfg: dict[str, Any], video_type: str) -> str:
+    """Resolve the vision-prompt template to send to the LLM.
+
+    Priority:
+      1. `vision_prompt_path` cfg option / `--prompt-file` CLI flag —
+         loads the file verbatim and (by default) prepends the global
+         prefix from prompts_default.toml.
+      2. Otherwise look up `prompts.<video_type>` via load_prompt(), which
+         honors user overrides at ~/.neurolearn/prompts.toml.
+
+    Path errors fall back to the generic built-in template; bad config
+    shouldn't break the pipeline.
     """
     path_str = (cfg.get("vision_prompt_path") or "").strip()
-    if not path_str:
-        return DEFAULT_PROMPT
-    try:
-        return Path(path_str).expanduser().read_text(encoding="utf-8")
-    except Exception:
-        return DEFAULT_PROMPT
+    use_global = not cfg.get("no_global_prefix", False)
+    if path_str:
+        try:
+            custom = Path(path_str).expanduser().read_text(encoding="utf-8")
+        except Exception:
+            spec = load_prompt(video_type, use_global_prefix=use_global)
+            return spec.template
+        spec = load_prompt(
+            video_type, custom_template=custom, use_global_prefix=use_global,
+        )
+        return spec.template
+    spec = load_prompt(video_type, use_global_prefix=use_global)
+    return spec.template
 
 
 Source = Literal["youtube_manual", "youtube_auto", "whisper", "external_asr"]
@@ -263,6 +292,10 @@ def apply_v02_stages(
         if windows:
             fpw = cfg.get("frames_per_window", 3)
             asym = bool(cfg.get("asymmetric_frames", False))
+            # v0.10.1: resolve video_type → prompt. CLI / preset can pin
+            # it; otherwise auto-detect from the transcript.
+            video_type = cfg.get("video_type") or _autodetect_video_type(result)
+            prompt_template = _resolve_vision_prompt(cfg, video_type)
             if vision_backend_name == "claude":
                 from skills.neurolearn.vision.claude_vision import (
                     ClaudeVisionBackend,
@@ -274,15 +307,18 @@ def apply_v02_stages(
                 )
                 backend = OpenAIVisionBackend(api_key=api_key, frames_per_window=fpw)
             else:  # gemini
+                from skills.neurolearn.vision.gemini import concurrency_for_tier
+                tier = cfg.get("gemini_tier") or "free"
                 backend = GeminiVisionBackend(
                     api_key=api_key,
                     frames_per_window=fpw,
                     use_asymmetric_offsets=asym,
+                    max_concurrent=concurrency_for_tier(tier),
                 )
             visuals = backend.annotate_segments(
                 video_path=video_path,
                 windows=windows,
-                prompt_template=_load_vision_prompt(cfg),
+                prompt_template=prompt_template,
                 language=result.language_detected or "en",
                 video_id=video_id,
                 out_dir=out_dir,
@@ -330,7 +366,7 @@ def apply_v02_stages(
                         windows=windows,
                         video_path=video_path,
                         api_key=anthropic_key,
-                        prompt_template=_load_vision_prompt(cfg),
+                        prompt_template=prompt_template,
                         language=result.language_detected or "en",
                         video_id=video_id,
                         out_dir=out_dir,

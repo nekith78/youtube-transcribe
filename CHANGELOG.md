@@ -3,6 +3,98 @@
 All notable changes to neurolearn will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.1] — 2026-05-15
+
+### Vision prompts: per-video-type templates + user customization
+
+Replaces the single generic YouTube-flavoured prompt with **9
+context-specific templates**. The right prompt is picked
+automatically from the transcript; users can override it.
+
+**Built-in types** (in `skills/neurolearn/vision/data/prompts_default.toml`):
+  • `tutorial` — UI actions, click targets, before/after states
+  • `lecture` — slides, diagrams, equations
+  • `code` — IDE, terminal, file paths, errors
+  • `demo` — product showcase, feature reveal
+  • `interview` — multi-speaker, lower-thirds, B-roll
+  • `vlog` — scene, activity, location
+  • `review` — product, specs, comparison
+  • `talking_head` — narrative monologue with minimal visuals
+  • `generic` — fallback for unclassified video
+
+Each template is 300-500 tokens with type-specific rules + a
+good/bad example. The previous YouTube-flavoured generic text is
+gone; templates are source-agnostic (work for YouTube / IG / TikTok
+/ local files).
+
+**Auto-detection** lives in
+`skills/neurolearn/detection/video_type_detect.py`. Counts type-specific
+signal phrases (e.g. "click/press/нажимаем" for tutorial;
+"slide/research shows/today we'll" for lecture) per minute. Whichever
+type clears its threshold wins; long videos with no positive signal
+default to `talking_head`; short signal-less clips default to `generic`.
+
+**User overrides** at `~/.neurolearn/prompts.toml`. Same shape as the
+shipped TOML:
+
+```toml
+[global]
+prefix = "..."          # universal rules, prepended to every type
+
+[prompts.tutorial]
+prompt = "..."          # full per-type instruction
+append_global = true    # default; set false to use ONLY this prompt
+
+# Brand-new mode — define your own type:
+[prompts.cooking-show]
+prompt = "Focus on ingredients, utensils, cooking actions."
+append_global = false
+```
+
+**New CLI flags** (transcribe + batch):
+  • `--video-type <name>` — pin a specific type (skips auto-detect)
+  • `--no-global-prefix` — with `--vision-prompt`, drop the global prefix
+
+### Gemini API improvements
+
+- **Caching the right thing**. Previous build cached only the system
+  prompt (~150 tokens) which falls below the 1024-token cache
+  minimum and never activated. v0.10.1 caches `[uploaded_video,
+  system_instruction]` together — the video easily clears the
+  minimum, so the bundle qualifies. Per-window calls now reference
+  the cache and pay only 25% of the rate on the cached tokens (which
+  are the dominant cost). Expected savings: 70-75% of vision tokens
+  on multi-window videos.
+- **Skip caching when N<2 windows**. For a 1-window video, the
+  setup + storage cost outweighs the single cached call. Now we
+  bypass cache creation entirely in that case.
+- **Adaptive concurrency by Gemini tier**. New `gemini_tier` config
+  field: `"free"` (default) → `max_concurrent=3` (under the 5 RPM
+  free-tier limit); `"paid"` → 10; `"paid-tier2"` → 20; `"paid-tier3"`
+  → 50. Override per-call via constructor `max_concurrent` if needed.
+- **Honor server-side retryDelay**. 429 RESOURCE_EXHAUSTED responses
+  include `"retryDelay": "31s"` — we now parse and sleep exactly
+  that long instead of using the hard-coded `[3, 6, 12]` backoffs
+  which previously missed the per-minute quota reset.
+
+### Tests
+
+- 12 new tests in `test_video_type_detect.py` — every type recognised
+  on representative transcripts; lecture rejected from tutorial-style
+  text; talking_head for long signal-less videos
+- 16 new tests in `test_vision_prompts_loader.py` — built-in types
+  load, user overrides replace, global prefix prepend, custom types,
+  CLI inline template, broken TOML falls back, format_prompt substitution
+- 12 new tests in `test_gemini_caching_concurrency.py` — tier mapping,
+  retryDelay parsing, cache-skip-on-N=1, cache-with-video-on-N≥2,
+  cached-call omits video, cache failure fall-back
+- Updated `test_custom_vision_prompt.py` to the new `_resolve_vision_prompt`
+  contract (was `_load_vision_prompt`)
+
+Total: 972 passed, 3 skipped.
+
+---
+
 ## [0.10.0] — 2026-05-15
 
 ### Visual pipeline optimization — 9 improvements

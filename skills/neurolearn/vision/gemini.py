@@ -72,6 +72,22 @@ _SEGMENT_SCHEMA = {
 }
 
 
+# Concurrency caps per Gemini tier. The actual API limits are higher,
+# but a conservative cap leaves room for retries inside the same minute.
+_TIER_CONCURRENCY: dict[str, int] = {
+    "free": 3,
+    "paid": 10,
+    "paid-tier2": 20,
+    "paid-tier3": 50,
+}
+
+
+def concurrency_for_tier(tier: str) -> int:
+    """Pick a sensible max_concurrent for the given Gemini tier. Unknown
+    tier strings fall back to the safe `free` floor."""
+    return _TIER_CONCURRENCY.get(tier, _TIER_CONCURRENCY["free"])
+
+
 @dataclass
 class TokenUsage:
     """Per-call billing summary.
@@ -91,7 +107,11 @@ class GeminiVisionBackend:
     model: str = "gemini-2.5-flash"
     frames_per_window: int = 3
     max_retries: int = 3
-    max_concurrent: int = 10   # asyncio.Semaphore limit — Gemini paid tier ~1000 RPM, 10 is safe
+    # Concurrency floor — tuned per Gemini tier. Free tier 2.5-flash has
+    # an RPM limit of 5; we keep 3 to leave headroom for retries hitting
+    # the same minute. Paid Tier 1 gets 1000 RPM → 10 is safe and fast.
+    # Callers override via gemini_tier (config) or this kwarg directly.
+    max_concurrent: int = 3
     # When True (driven by tutorial preset / asymmetric frame mode), the
     # caller passes `event_ts` so we can take frames at offsets
     # `-1.5s / +0.3s / +2.0s` instead of evenly spaced through the window.
@@ -142,11 +162,22 @@ class GeminiVisionBackend:
         except Exception:
             return []
 
-        # Create a cached content block with the system instruction.
-        # Each per-window call references it instead of re-sending the
-        # full system prompt. Falls back to per-call inclusion if caching
-        # is rejected (e.g. tiny prompts below cache minimum size).
-        cached_name = await self._maybe_create_cache(client, prompt_template)
+        # Caching strategy (v0.10.1):
+        # We cache the UPLOADED VIDEO together with the system prompt —
+        # not the prompt alone. Caching the prompt alone hits the 1024-
+        # token minimum and rarely activates. The video easily clears
+        # that threshold (~66 tok/sec on LOW res), so the bundle always
+        # qualifies for caching. Subsequent per-window calls reference
+        # the cached bundle and pay only 25% of the rate on its tokens —
+        # which dominate the per-call billing, so this is the actual win.
+        #
+        # Skip caching entirely when there's only 1 window: setup +
+        # storage cost outweighs the single cached call.
+        cached_name = None
+        if len(windows) >= 2:
+            cached_name = await self._maybe_create_cache(
+                client, prompt_template, uploaded,
+            )
 
         frames_dir = out_dir / "frames"
         frames_dir.mkdir(parents=True, exist_ok=True)
@@ -217,18 +248,26 @@ class GeminiVisionBackend:
         self,
         client: genai.Client,
         prompt_template: str,
+        uploaded,
     ) -> str | None:
-        """Cache the system prompt for reuse across windows. Returns the
-        cache name (resource id) on success, None on failure (falls back
-        to per-call system instruction inclusion).
+        """Cache the uploaded video + system prompt for reuse across windows.
+
+        The combined bundle is what makes caching worthwhile (the video
+        easily clears the 1024-token cache minimum; the prompt alone
+        usually doesn't). The cache lives for 1h by default, which
+        comfortably covers any single-video pipeline run.
+
+        Returns the cache resource name on success; None on failure
+        (caller falls back to per-call system_instruction inclusion).
         """
         try:
             cache = await asyncio.to_thread(
                 client.caches.create,
                 model=self.model,
                 config=types.CreateCachedContentConfig(
+                    contents=[uploaded],
                     system_instruction=prompt_template,
-                    ttl="3600s",  # 1h — comfortably covers any single video pipeline
+                    ttl="3600s",
                 ),
             )
         except Exception:
@@ -275,10 +314,19 @@ class GeminiVisionBackend:
 
         config = types.GenerateContentConfig(**config_kwargs)
 
-        contents = [user_prompt, uploaded]
+        # When caching is active the bundle (video + system prompt) is
+        # already on Google's side — we only send the dynamic per-window
+        # part. Otherwise (cache failed / N<2 windows) we re-send the
+        # uploaded video reference together with the user prompt.
+        contents = [user_prompt] if cached_name else [user_prompt, uploaded]
 
         usage: TokenUsage | None = None
-        backoffs = [3.0, 6.0, 12.0]
+        # Default exponential backoff used when the server doesn't tell
+        # us how long to wait. Gemini 429s include a `retryDelay` value
+        # in seconds — we honor that when present (so we wake up right
+        # after the per-minute quota window resets, not earlier and not
+        # 31 seconds later).
+        default_backoffs = [3.0, 6.0, 12.0]
         last_err: Exception | None = None
         response = None
         for attempt in range(self.max_retries):
@@ -293,8 +341,15 @@ class GeminiVisionBackend:
                 break
             except Exception as e:
                 last_err = e
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(backoffs[attempt])
+                if attempt >= self.max_retries - 1:
+                    break
+                # Prefer the server-suggested retry delay (seconds).
+                # Falls back to exponential backoff when we can't parse one.
+                retry_delay = _parse_retry_delay_seconds(e)
+                wait = retry_delay if retry_delay is not None else default_backoffs[attempt]
+                # Cap wait at 60s so a single failed call doesn't stall
+                # the whole pipeline.
+                await asyncio.sleep(min(wait, 60.0))
         if response is None:
             # All retries failed — record a zero-cost usage entry so
             # downstream budget logging stays correct.
@@ -377,3 +432,32 @@ def _parse_structured_response(
 
     needs_refinement = bool(data.get("needs_refinement", False))
     return description, key_objects, importance, confidence, needs_refinement
+
+
+def _parse_retry_delay_seconds(exc: Exception) -> float | None:
+    """Pull a `retryDelay` (seconds) out of a Gemini 429 exception.
+
+    Gemini's RESOURCE_EXHAUSTED responses embed a Google `RetryInfo`
+    detail with a string like `"retryDelay": "31s"`. Honoring it makes
+    retries land right after the per-minute quota resets, instead of
+    sleeping the default backoff and missing the window.
+
+    Returns the delay in seconds, or None when the exception doesn't
+    carry one (e.g. transient network failure, server-side timeout).
+    """
+    import re
+    text = str(exc)
+    if "429" not in text and "RESOURCE_EXHAUSTED" not in text:
+        return None
+    # Format observed in production: "retryDelay": "31s" or 'retryDelay': '31s'
+    match = re.search(
+        r"retry[_-]?delay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)s",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            return None
+    return None

@@ -164,6 +164,13 @@ class Config:
     instagram_cookies_file: str = ""
     tiktok_cookies_file: str = ""
 
+    # === v0.10.1: Gemini API tier ===
+    # Drives max_concurrent in the vision backend. "free" caps parallel
+    # calls at 3 (under the 5 RPM limit on gemini-2.5-flash free tier).
+    # Paid tiers allow higher concurrency.
+    # Values: "free" | "paid" | "paid-tier2" | "paid-tier3"
+    gemini_tier: str = "free"
+
 
 DEFAULT_CONFIG = Config()
 
@@ -192,7 +199,7 @@ def _to_toml_dict(cfg: Config) -> dict:
             "beam_size": d["beam_size"],
             "vad": d["vad"],
         },
-        "gemini": {"model": d["gemini_model"]},
+        "gemini": {"model": d["gemini_model"], "tier": d["gemini_tier"]},
         "groq": {"model": d["groq_model"]},
         "openai": {"model": d["openai_model"]},
         "deepgram": {"model": d["deepgram_model"]},
@@ -239,6 +246,7 @@ def _from_toml_dict(d: dict) -> Config:
         beam_size=wl.get("beam_size", DEFAULT_CONFIG.beam_size),
         vad=wl.get("vad", DEFAULT_CONFIG.vad),
         gemini_model=d.get("gemini", {}).get("model", DEFAULT_CONFIG.gemini_model),
+        gemini_tier=d.get("gemini", {}).get("tier", DEFAULT_CONFIG.gemini_tier),
         groq_model=d.get("groq", {}).get("model", DEFAULT_CONFIG.groq_model),
         openai_model=d.get("openai", {}).get("model", DEFAULT_CONFIG.openai_model),
         deepgram_model=d.get("deepgram", {}).get("model", DEFAULT_CONFIG.deepgram_model),

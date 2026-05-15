@@ -198,6 +198,27 @@ REGISTRY: list[OptionField] = [
         section="vision",
     ),
     OptionField(
+        key="video_type", type=str, default="",
+        choices=None,
+        description=(
+            "Force a specific video type for vision prompt selection: "
+            "tutorial | lecture | code | demo | interview | vlog | "
+            "review | talking_head | generic. Empty = auto-detect from "
+            "transcript via detection/video_type_detect.py."
+        ),
+        section="vision",
+    ),
+    OptionField(
+        key="no_global_prefix", type=bool, default=False,
+        choices=None,
+        description=(
+            "When used with vision_prompt_path: don't prepend the built-in "
+            "global prefix (format / language / JSON-only rules). The "
+            "user-supplied template is the entire instruction."
+        ),
+        section="vision",
+    ),
+    OptionField(
         key="auto_tutorial_detect", type=bool, default=True,
         choices=None,
         description=(
