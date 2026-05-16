@@ -1,6 +1,6 @@
 [project]
 name = "neurolearn"
-version = "0.10.1"
+version = "0.10.2"
 description = "NEUROLEARN — learn from videos. Transcribe / analyze / research / subscribe to YouTube, Instagram, TikTok and local media via 8 interchangeable backends (Whisper local / subtitles / Gemini / Groq / OpenAI / Deepgram / AssemblyAI / custom)."
 readme = "README.md"
 # Upper bound `<3.14` is required by `scenedetect` 0.7 (no wheels for Python 3.14
@@ -94,6 +94,18 @@ instagram = [
     "instaloader>=4.13",
 ]
 
+# PDF report generation — opt-in. WeasyPrint renders HTML→PDF (LGPL,
+# free). Needs cairo / pango system libs on macOS (brew install pango)
+# and Linux (apt install libpango-1.0-0 libpangoft2-1.0-0). On Windows
+# WeasyPrint additionally requires GTK runtime. The `report` extra
+# bundles the Python side; system libs are installed once by the user
+# following the on-demand hint printed by `neurolearn report`.
+report = [
+    "weasyprint>=62.0",
+    "jinja2>=3.1",
+    "markdown>=3.6",
+]
+
 [project.scripts]
 neurolearn = "skills.neurolearn.transcribe:cli"
 
@@ -106,6 +118,9 @@ packages = ["skills"]
 include = [
     "skills/neurolearn/presets/data/*.toml",
     "skills/neurolearn/vision/data/*.toml",
+    "skills/neurolearn/report/data/*.toml",
+    "skills/neurolearn/report/data/templates/*.html",
+    "skills/neurolearn/report/data/templates/*.css",
 ]
 
 [tool.pytest.ini_options]

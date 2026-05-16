@@ -3,6 +3,78 @@
 All notable changes to neurolearn will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.2] — 2026-05-16
+
+### PDF report generation
+
+New `neurolearn report <batch_dir>` subcommand. Takes an already-
+transcribed batch (manifest.json + SRT + keyframes) and produces a
+structured PDF report with title, executive summary, sectioned
+table of contents, per-section key points, embedded keyframes, and
+inline timestamps.
+
+**How it works:**
+
+1. **Outliner** asks an LLM (gemini / claude / openai / ollama) to
+   structure the transcript + visual segments into a JSON outline
+   matching the report's prompt template.
+2. **Renderer** flows the outline through a Jinja2 HTML template
+   (`report/data/templates/base.html` + `base.css`), downscales any
+   referenced keyframes to ≤1000px via Pillow, embeds them as base64
+   data URIs, and pipes everything through WeasyPrint to produce a
+   self-contained, A4-paginated PDF.
+
+**Prompt templates** (parallel to v0.10.1 vision prompts):
+- Built-in: `tutorial`, `vlog`, `generic` in
+  `skills/neurolearn/report/data/report_prompts_default.toml`.
+- User override: `~/.neurolearn/report_prompts.toml` with the
+  same `[global] prefix` / `[prompts.<type>] prompt + append_global`
+  shape.
+- CLI override: `--prompt-template-file <path>` for a one-off.
+- Single-call for transcripts under ~15k tokens; **hierarchical**
+  chunk-then-assemble for longer ones — per-chunk outlines feed a
+  final assembly call for a top-level title + summary.
+
+**Defaults that make the report do the right thing without flags:**
+- Auto-detect `report_type` from the transcript via the same
+  classifier that powers vision prompts (`tutorial / lecture / code
+  / demo / interview / vlog / review / talking_head / generic`,
+  mapped onto the three report templates).
+- Auto-pick `target_language` from the video's detected language;
+  interactive prompt with the detected language as default when
+  stdin is a TTY (skipped with `--yes`).
+- Friendly install hint if the `report` optional extra is missing —
+  no crash, just one-line instructions on how to install.
+
+**Flags** (`neurolearn report --help`):
+- `--latest`, `--video-index N` — batch selection / multi-video.
+- `--prompt`, `--prompt-file`, `--prompt-template-file`.
+- `--report-type {auto|tutorial|vlog|generic}`.
+- `--report-language en|ru|...`.
+- `--backend {gemini|claude|openai|ollama}` + `--ollama-model/host`.
+- `--output <path>`, `--max-images N`, `--max-image-width N`,
+  `--no-screenshots`, `--keep-html`, `--yes`.
+
+**Optional dependencies** (`uv sync --extra report`):
+- `weasyprint>=62.0` (LGPL, free) for PDF.
+- `jinja2>=3.1` for templating.
+- `markdown>=3.6` reserved for future inline markdown in summaries.
+- On macOS the bundle also requires `brew install pango cairo` for
+  WeasyPrint's native libraries; the package primes
+  `DYLD_FALLBACK_LIBRARY_PATH` automatically so the brew libs are
+  found.
+
+**Resilient parsing.** LLM responses are accepted even when they
+arrive wrapped in markdown fences, include preamble, return a
+single timestamp/list-item as a string instead of a one-element
+list, or contain bracketed timestamps; an unparseable response
+produces a degraded outline (so the PDF still renders) rather than
+crashing the pipeline.
+
+**Test coverage.** 50 dedicated tests across prompts loader, outliner,
+renderer, orchestrator, and CLI (`tests/test_report_*.py`). Full
+suite: 1032 passed, 3 skipped, no regressions.
+
 ## [0.10.1] — 2026-05-15
 
 ### Vision prompts: per-video-type templates + user customization

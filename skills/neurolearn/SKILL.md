@@ -162,6 +162,21 @@ neurolearn analyze --batch <batch_dir> --select "1,3,5-7" --prompt-file p.md
 Used after a transcription run if you want one LLM pass over selected transcripts.
 Most Claude-in-chat flows don't need this — just read `combined.md` directly.
 
+### Report (PDF generation, v0.10.2)
+
+```
+neurolearn report --latest                              # most recent batch
+neurolearn report <batch_dir> --yes                     # specific batch, no prompts
+neurolearn report --latest --prompt "Filter scope..."   # narrow with a user filter
+neurolearn report --latest --report-type tutorial       # force layout
+neurolearn report --latest --no-screenshots --keep-html # text-only + HTML
+```
+
+Takes a transcribed batch (manifest.json + SRT + keyframes) and
+produces a structured PDF with TOC, sections, embedded keyframes,
+and inline timestamps. Auto-detects video type and language, with
+flag overrides for both. Optional deps: `uv sync --extra report`.
+
 ### Default behavior
 
 - No flags → uses configured default backend (usually `whisper-local`).

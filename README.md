@@ -19,7 +19,7 @@ Works as:
 
 ## Status
 
-v0.7 — production-ready:
+v0.10.2 — production-ready:
 
 | Feature | Since | State |
 |---|---|---|
@@ -43,6 +43,8 @@ v0.7 — production-ready:
 | `history` — log past research/subscribes runs | v0.7 | Working |
 | YouTube SP date filter (`--days N` → server-side prefilter) | v0.7 | Working |
 | `schedule` — cross-OS scheduler snippet generator (cron/launchd/systemd/Task Scheduler) | v0.7 | Working |
+| Visual pipeline v2 — per-video-type vision prompts (9 templates, auto-detected) + cost tracking | v0.10 / v0.10.1 | Working |
+| `report` — PDF report generation (Jinja2 + WeasyPrint) with TOC, sections, embedded keyframes | v0.10.2 | Working |
 | Web UI (Gradio) | v0.4 | **Experimental, hidden** — code preserved, not maintained |
 
 ---
@@ -368,6 +370,73 @@ neurolearn batch https://www.youtube.com/@channel --limit 5 \
   --then-analyze --prompt "Bullet the main takeaways from each video." \
   --analyze-backend gemini
 ```
+
+---
+
+## Report — PDF generation from a transcribed batch (v0.10.2)
+
+Take any batch produced by `transcribe` / `batch` (with or without
+visual moments) and turn it into a structured PDF report: title,
+executive summary, table of contents, sectioned content with bullet
+key-points, inline timestamps, and embedded keyframes.
+
+```bash
+# Install the optional report extra once
+uv sync --extra report
+# macOS only: brew install pango cairo   # WeasyPrint native deps
+
+# Render from the most-recent batch, ask language interactively
+neurolearn report --latest
+
+# Render a specific batch, force tutorial layout, English
+neurolearn report ~/.neurolearn/out/<batch_dir>/ \
+  --report-type tutorial --report-language en --yes
+
+# Narrow scope with a user filter — keeps only matching sections
+neurolearn report --latest \
+  --prompt "Only sections about authentication and error handling."
+
+# Text-only (no screenshots), keep the intermediate HTML for inspection
+neurolearn report --latest --no-screenshots --keep-html
+
+# Use a local LLM instead of Gemini
+neurolearn report --latest --backend ollama --ollama-model qwen3:8b
+```
+
+**Three built-in layouts** — auto-picked by re-running the v0.10.1
+type detector on the transcript, or pinned with `--report-type`:
+
+- `tutorial` — step-by-step format, imperative section titles, code
+  blocks verbatim. Used for tutorial / code / demo videos.
+- `vlog` — highlights-only: surfaces moments where the creator
+  explicitly shows information (prices, products, on-screen graphics).
+  Skips pure narration.
+- `generic` — section-by-section outline by topic shifts. Fallback
+  for anything else.
+
+**Custom prompts** override the built-in per-type templates the same
+way vision prompts do in v0.10.1:
+
+```toml
+# ~/.neurolearn/report_prompts.toml
+[global]
+prefix = "Always reply in concise English. Use [HH:MM:SS] for timestamps."
+
+[prompts.tutorial]
+prompt = "Step-by-step layout, but always end with a 'Common pitfalls' section."
+append_global = true
+
+# Brand-new custom type
+[prompts.cooking-recipe]
+prompt = "Extract ingredients, steps, timings. Keep measurements verbatim."
+append_global = false
+```
+
+Then `neurolearn report --latest --report-type cooking-recipe`.
+
+Long videos (>~15k transcript tokens) automatically switch to a
+hierarchical chunk-then-assemble pass — per-chunk outlines feed a
+final assembly call for a top-level title + executive summary.
 
 ---
 

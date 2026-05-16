@@ -2062,10 +2062,244 @@ from skills.neurolearn.subscribes.cli import subscribes_group
 cli.add_command(subscribes_group)
 
 
+# === v0.10.2: report command ===
+@cli.command(name="report")
+@click.argument("batch_dir", required=False,
+                type=click.Path(path_type=Path))
+@click.option("--latest", is_flag=True, default=False,
+              help="Use the most recently modified batch under output-dir.")
+@click.option("--video-index", "video_index", type=int, default=0,
+              show_default=True,
+              help="Pick the n-th video (0-based) when batch has multiple.")
+@click.option("--prompt", "prompt_inline", default=None,
+              help="User filter — narrow what goes in the report.")
+@click.option("--prompt-file", "prompt_file", default=None,
+              type=click.Path(exists=True, path_type=Path),
+              help="Read --prompt content from this file.")
+@click.option("--prompt-template-file", "prompt_template_file", default=None,
+              type=click.Path(exists=True, path_type=Path),
+              help="Override the entire report prompt template (advanced).")
+@click.option("--report-type", "report_type_opt",
+              type=click.Choice(["auto", "tutorial", "vlog", "generic"]),
+              default="auto", show_default=True,
+              help="Report layout. auto = detect from transcript.")
+@click.option("--report-language", "report_language_opt", default=None,
+              help="Output language (en/ru/...). Default: video's detected "
+                   "language; interactive prompt if TTY and no flag.")
+@click.option("--backend", "backend_opt",
+              type=click.Choice(["gemini", "claude", "openai", "ollama"]),
+              default="gemini", show_default=True,
+              help="LLM provider for outline construction.")
+@click.option("--output", "output_opt", default=None,
+              type=click.Path(path_type=Path),
+              help="Override the PDF output path.")
+@click.option("--max-images", "max_images_opt", type=int, default=50,
+              show_default=True,
+              help="Cap on screenshots embedded in the PDF.")
+@click.option("--max-image-width", "max_image_width_opt", type=int,
+              default=1000, show_default=True,
+              help="Max width in px for embedded screenshots.")
+@click.option("--no-screenshots", "no_screenshots", is_flag=True,
+              default=False,
+              help="Skip all screenshots — text-only report.")
+@click.option("--keep-html", "keep_html_opt", is_flag=True, default=False,
+              help="Also write the intermediate HTML alongside the PDF.")
+@click.option("--yes", "yes_flag", is_flag=True, default=False,
+              help="Don't prompt interactively — accept defaults.")
+@click.option("--ollama-model", "ollama_model_opt", default=None,
+              help="Ollama model tag (default: llama3.2:3b).")
+@click.option("--ollama-host", "ollama_host_opt", default=None,
+              help="Ollama HTTP host.")
+def report_cmd(
+    batch_dir: Path | None,
+    latest: bool,
+    video_index: int,
+    prompt_inline: str | None,
+    prompt_file: Path | None,
+    prompt_template_file: Path | None,
+    report_type_opt: str,
+    report_language_opt: str | None,
+    backend_opt: str,
+    output_opt: Path | None,
+    max_images_opt: int,
+    max_image_width_opt: int,
+    no_screenshots: bool,
+    keep_html_opt: bool,
+    yes_flag: bool,
+    ollama_model_opt: str | None,
+    ollama_host_opt: str | None,
+) -> None:
+    """Render a PDF report from a transcribed batch directory."""
+    # 1. Optional deps gate (weasyprint + jinja2 + markdown).
+    from skills.neurolearn.report import require_report_deps_or_exit
+    require_report_deps_or_exit()
+
+    from skills.neurolearn.report.orchestrator import generate_report
+
+    # 2. Resolve batch_dir.
+    cfg = load_config(CONFIG_PATH)
+    outputs_dir = Path(cfg.output_dir).expanduser()
+
+    if batch_dir is None and not latest:
+        if not _stdin_is_tty():
+            console.print(
+                "[red]BATCH_DIR not specified and --latest not set, "
+                "but stdin is not a TTY — picker unavailable.[/red]"
+            )
+            sys.exit(3)
+        from skills.neurolearn.analyze.picker import (
+            pick_batch, PickerCancelled,
+        )
+        try:
+            batch_dir = pick_batch(outputs_dir)
+        except FileNotFoundError as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(3)
+        except PickerCancelled:
+            console.print("[yellow]Cancelled.[/yellow]")
+            sys.exit(5)
+    elif latest:
+        if not outputs_dir.exists():
+            console.print(
+                f"[red]Output dir {outputs_dir} does not exist.[/red]"
+            )
+            sys.exit(3)
+        candidates = [
+            p for p in outputs_dir.iterdir()
+            if p.is_dir() and (p / "manifest.json").exists()
+        ]
+        if not candidates:
+            console.print(
+                f"[red]No batches under {outputs_dir} have a manifest.[/red]"
+            )
+            sys.exit(3)
+        batch_dir = max(candidates, key=lambda p: p.stat().st_mtime)
+        console.print(f"[dim]latest: {batch_dir}[/dim]")
+
+    batch_dir = Path(batch_dir).resolve()
+    if not (batch_dir / "manifest.json").exists():
+        console.print(
+            f"[red]No manifest.json in {batch_dir}.[/red] "
+            "Pass a batch_dir produced by transcribe/batch."
+        )
+        sys.exit(3)
+
+    # 3. Resolve --prompt / --prompt-file (user filter, optional).
+    if prompt_inline and prompt_file:
+        console.print(
+            "[red]Pass at most one of[/red] --prompt / --prompt-file."
+        )
+        sys.exit(2)
+    user_filter = prompt_inline or ""
+    if prompt_file is not None:
+        user_filter = prompt_file.read_text(encoding="utf-8")
+
+    custom_template = None
+    if prompt_template_file is not None:
+        custom_template = prompt_template_file.read_text(encoding="utf-8")
+
+    # 4. API key (ollama is local).
+    if backend_opt == "ollama":
+        api_key: str | None = None
+    else:
+        key_lookup = {
+            "gemini": "gemini", "claude": "anthropic", "openai": "openai",
+        }[backend_opt]
+        api_key = get_api_key(key_lookup)
+        if not api_key:
+            console.print(
+                f"[red]No API key for backend={backend_opt}[/red]. "
+                f"Set it via `neurolearn config set-key {key_lookup}` "
+                f"or use --backend ollama."
+            )
+            sys.exit(4)
+
+    # 5. Resolve target_language.
+    #    Priority: explicit --report-language > interactive prompt
+    #    (TTY only, no --yes) > video's language_detected > "en".
+    import json as _json
+    manifest = _json.loads(
+        (batch_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    videos = manifest.get("videos") or []
+    if not videos:
+        console.print(f"[red]Batch {batch_dir} has zero videos.[/red]")
+        sys.exit(3)
+    if video_index < 0 or video_index >= len(videos):
+        console.print(
+            f"[red]--video-index {video_index} out of range "
+            f"(batch has {len(videos)}).[/red]"
+        )
+        sys.exit(2)
+    detected_lang = (
+        videos[video_index].get("language_detected")
+        or videos[video_index].get("source_language")
+        or "en"
+    )
+
+    if report_language_opt:
+        target_language = report_language_opt
+    elif yes_flag or not _stdin_is_tty():
+        target_language = detected_lang
+    else:
+        from rich.prompt import Prompt
+        target_language = Prompt.ask(
+            f"Report language [dim](video detected: {detected_lang})[/dim]",
+            default=detected_lang,
+        ).strip() or detected_lang
+
+    # 6. Generate the report.
+    console.print(
+        f"[bold]Generating report...[/bold]\n"
+        f"  batch     : {batch_dir}\n"
+        f"  backend   : {backend_opt}\n"
+        f"  type      : {report_type_opt}\n"
+        f"  language  : {target_language}\n"
+        f"  filter    : {user_filter or '(none)'}\n"
+    )
+
+    try:
+        result = generate_report(
+            batch_dir=batch_dir,
+            video_index=video_index,
+            output_path=output_opt,
+            backend=backend_opt,
+            api_key=api_key,
+            user_filter=user_filter,
+            custom_template=custom_template,
+            report_type=report_type_opt,
+            target_language=target_language,
+            include_screenshots=not no_screenshots,
+            max_images=max_images_opt,
+            image_max_width=max_image_width_opt,
+            keep_html=keep_html_opt,
+            version=__version__,
+            ollama_model=ollama_model_opt or "llama3.2:3b",
+            ollama_host=ollama_host_opt or "http://localhost:11434",
+        )
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(3)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(4)
+
+    # 7. Success message.
+    console.print(
+        f"\n[green]✓[/green] Report rendered "
+        f"({result.section_count} sections"
+        f"{', hierarchical' if result.used_hierarchical else ''})"
+    )
+    console.print(f"  [bold]{result.pdf_path}[/bold]")
+    if result.html_path:
+        console.print(f"  HTML: {result.html_path}")
+
+
 __all__ = [
     "cli", "transcribe_cmd", "batch_cmd", "config",
     "webui_cmd", "summarize_cmd", "analyze_cmd",
     "history_group", "research_cmd", "subscribes_group",
+    "report_cmd",
 ]
 
 

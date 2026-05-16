@@ -5,10 +5,11 @@ repository.
 
 ## Repository state
 
-`neurolearn` is a mature CLI tool: v0.8.0, ~900 unit tests
+`neurolearn` is a mature CLI tool: v0.10.2, ~1030 unit tests
 passing, in active use. Shipped commands: `transcribe`, `batch`,
 `analyze`, `research`, `subscribes` (YouTube / Instagram / TikTok),
-`history`, `config`, `webui` (hidden).
+`report` (PDF generation, v0.10.2), `history`, `config`, `webui`
+(hidden).
 
 The source of truth for behavior is the code. Design documents in
 `docs/specs/` and plan documents in `docs/plans/` capture the original
@@ -42,8 +43,9 @@ uv sync --extra instagram          # + instaloader fallback
 uv sync --extra diarization        # + pyannote
 uv sync --extra webui              # + gradio
 uv sync --extra ocr                # + pytesseract, easyocr
+uv sync --extra report             # + weasyprint, jinja2, markdown (PDF reports)
 
-uv run pytest                      # full suite (~25s, ~900 tests)
+uv run pytest                      # full suite (~25s, ~1030 tests)
 uv run pytest tests/test_X.py -v   # one file
 uv run pytest -k keyword -v        # filter by keyword
 RUN_E2E_SMOKE=1 uv run pytest -v   # enable network-touching e2e
@@ -153,7 +155,27 @@ Before `git push` to `main`:
    `git-cross-os`, which runs `code-reviewer` + `security-review`
    sub-agents before push.
 
-## Out of scope for v0.9 (currently)
+## Report mode (v0.10.2)
+
+`neurolearn report <batch_dir>` produces a structured PDF from any
+transcribed batch. Architecture is parallel to vision prompts from
+v0.10.1:
+
+- `skills/neurolearn/report/prompts.py` — TOML loader with global
+  prefix + per-type templates + user override
+  (`~/.neurolearn/report_prompts.toml`).
+- `skills/neurolearn/report/outliner.py` — single-call vs
+  hierarchical routing; resilient JSON parsing.
+- `skills/neurolearn/report/renderer.py` — Jinja2 HTML + WeasyPrint
+  PDF + Pillow downscale (≤1000px, base64 data URIs).
+- `skills/neurolearn/report/orchestrator.py` — manifest + SRT →
+  outline → PDF glue.
+
+Optional deps via `uv sync --extra report` (weasyprint + jinja2 +
+markdown). On macOS the package primes `DYLD_FALLBACK_LIBRARY_PATH`
+so `brew install pango cairo` libs are picked up automatically.
+
+## Out of scope for v0.10.2 (currently)
 
 Chunking videos > 2h, PyPI publication, Web UI revival (Gradio tabs
 re-do). These are tracked in README `## Roadmap`; add new requests
