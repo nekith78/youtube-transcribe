@@ -12,8 +12,8 @@
       "description": "Transcribe YouTube / Instagram / TikTok / local-file videos via 8 interchangeable backends (Whisper local, subtitles, Gemini, Groq, OpenAI, Deepgram, AssemblyAI, custom). Research topics, subscribe to channels with RSS, and render structured PDF reports.",
       "version": "0.10.2",
       "source": {
-        "source": "github",
-        "repo": "nekith78/neurolearn",
+        "source": "url",
+        "url": "https://github.com/nekith78/neurolearn.git",
         "ref": "main"
       },
       "author": {
