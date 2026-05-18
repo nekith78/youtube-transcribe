@@ -6,6 +6,7 @@ Two implementations:
 """
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -27,12 +28,19 @@ _MODEL_MAP = {
 }
 
 
+@functools.lru_cache(maxsize=4)
 def _load_faster_whisper_model(name: str, device: str, compute_type: str):
     """Indirection to make this trivially mockable in tests.
 
     faster-whisper is imported lazily here so that this module can be
     imported on Mac arm64 (where faster-whisper is not installed) without
     raising an ImportError at import time.
+
+    Cached via lru_cache: in a batch run with N videos against the same
+    (model, device, compute_type) triple, the WhisperModel constructor
+    fires only once, saving 2-5 seconds of model load + GPU init per
+    subsequent video. maxsize=4 holds a few alternate configurations
+    if a user mixes them in one process (rare).
     """
     from faster_whisper import WhisperModel  # noqa: PLC0415
     return WhisperModel(name, device=device, compute_type=compute_type)

@@ -7,10 +7,24 @@ original query if the LLM returns nothing useful.
 Anchor language detection is **script-based** (Unicode block heuristic),
 not statistical — predictable on short cyrillic strings where
 `langdetect` historically confused ru with mk/uk/bg.
+
+v0.10.4: per-language translations run concurrently via
+ThreadPoolExecutor. The LLM-call latency is I/O-bound (waiting on the
+remote provider), so threads parallelize naturally. With N target
+languages, total wall-clock is roughly one LLM round-trip rather
+than N — for the common `--languages ru,en,ja` case that's 2s
+instead of 6s before search starts.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from skills.neurolearn.analyze.runner import run_analysis
+
+
+# Cap concurrent LLM translations. Providers handle 3-5 parallel
+# requests fine on standard tiers; higher values risk free-tier 429s.
+_MAX_TRANSLATION_WORKERS = 4
 
 
 # Language → writing-script mapping. Anything not in cyrillic/cjk/arabic
@@ -157,14 +171,30 @@ def build_queries_per_language(
 
     anchor = pick_anchor_language(source_lang_hint, query, languages)
 
-    out: dict[str, str] = {}
-    for lang in languages:
-        if lang == anchor:
-            out[lang] = query
-        else:
-            out[lang] = translate_query(
-                query, target=lang, source=anchor,
+    # Anchor needs no LLM call. Translate the rest concurrently so total
+    # wall time matches one LLM round-trip rather than N.
+    targets = [lang for lang in languages if lang != anchor]
+    if not targets:
+        return {lang: query for lang in languages}
+
+    workers = min(_MAX_TRANSLATION_WORKERS, len(targets))
+    translations: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {
+            ex.submit(
+                translate_query, query,
+                target=lang, source=anchor,
                 backend=backend, api_key=api_key,
                 ollama_model=ollama_model, ollama_host=ollama_host,
-            )
+            ): lang
+            for lang in targets
+        }
+        for fut in futures:
+            lang = futures[fut]
+            translations[lang] = fut.result()
+
+    # Preserve user's requested order in the output dict.
+    out: dict[str, str] = {}
+    for lang in languages:
+        out[lang] = query if lang == anchor else translations[lang]
     return out

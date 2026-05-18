@@ -187,6 +187,53 @@ def test_build_queries_anchor_uses_query_as_is():
     assert out["en"] == "Claude новости"
 
 
+def test_build_queries_parallelizes_translations():
+    """v0.10.4: non-anchor translations run concurrently via thread pool.
+    With N languages, total wall time should be ~one LLM call, not N."""
+    import threading
+    import time
+
+    concurrent_count = 0
+    max_concurrent = 0
+    lock = threading.Lock()
+
+    def slow_translate(prompt, **kwargs):
+        nonlocal concurrent_count, max_concurrent
+        with lock:
+            concurrent_count += 1
+            if concurrent_count > max_concurrent:
+                max_concurrent = concurrent_count
+        time.sleep(0.1)  # simulate LLM latency
+        with lock:
+            concurrent_count -= 1
+        return "<<translated>>"
+
+    with patch(
+        "skills.neurolearn.research.translator.run_analysis",
+        side_effect=slow_translate,
+    ):
+        t0 = time.time()
+        out = build_queries_per_language(
+            "Claude features",
+            languages=["en", "ru", "ja", "de"],
+            source_lang_hint="en",   # 3 non-anchor translations
+            backend="gemini", api_key="k",
+        )
+        elapsed = time.time() - t0
+
+    # Strict: all four entries present.
+    assert set(out.keys()) == {"en", "ru", "ja", "de"}
+    assert out["en"] == "Claude features"  # anchor, no LLM call
+
+    # Concurrency proof: at least 2 calls were in-flight simultaneously.
+    # (Anchor is skipped, so 3 calls in parallel; we assert >=2 to be
+    # robust to interpreter scheduling delays.)
+    assert max_concurrent >= 2, f"max_concurrent={max_concurrent} (no parallelism)"
+    # Wall time should be <300ms (3 × 100ms sequential would be 300ms+).
+    # Generous slack for slow CI.
+    assert elapsed < 0.35, f"elapsed={elapsed:.2f}s (looks sequential)"
+
+
 def test_build_queries_with_explicit_hint():
     """--query-lang ru overrides script detection even when text is latin."""
     with patch(

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -28,6 +29,13 @@ from skills.neurolearn.analyze.runner import run_analysis
 from skills.neurolearn.report.prompts import (
     format_report_prompt, load_report_prompt,
 )
+
+
+# Cap concurrent per-chunk LLM calls in the hierarchical path. A long
+# video may produce 10+ chunks; running them all simultaneously would
+# burst free-tier quotas. 4 in-flight is comfortable for paid tiers
+# and safe for most free tiers.
+_MAX_CHUNK_WORKERS = 4
 
 
 # Heuristic: words → tokens (~4 chars per token average). Real
@@ -210,9 +218,13 @@ def _build_outline_hierarchical(
     if not chunks:
         return Outline()
 
-    # Step 1: per-chunk outlines.
-    partial_outlines: list[Outline] = []
-    for chunk in chunks:
+    # Step 1: per-chunk outlines, run concurrently.
+    # The LLM calls are I/O-bound so threads parallelize well; we cap
+    # at _MAX_CHUNK_WORKERS so a 10-chunk video doesn't 10x burst the
+    # per-minute quota. Order of results is preserved by keying on the
+    # chunk index.
+    def _run_chunk(idx_chunk: tuple[int, list]) -> tuple[int, Outline]:
+        idx, chunk = idx_chunk
         chunk_text = _join_transcript(chunk)
         chunk_visuals = _filter_visuals_for_chunk(visual_segments, chunk)
         chunk_visual_excerpt = _render_visual_segments(chunk_visuals)
@@ -227,8 +239,16 @@ def _build_outline_hierarchical(
             prompt, backend=backend, api_key=api_key,
             ollama_model=ollama_model, ollama_host=ollama_host,
         )
-        partial = _parse_outline_response(raw)
-        partial_outlines.append(partial)
+        return idx, _parse_outline_response(raw)
+
+    workers = min(_MAX_CHUNK_WORKERS, len(chunks))
+    results_by_index: dict[int, Outline] = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for idx, partial in ex.map(_run_chunk, enumerate(chunks)):
+            results_by_index[idx] = partial
+    partial_outlines: list[Outline] = [
+        results_by_index[i] for i in range(len(chunks))
+    ]
 
     # Step 2: final assembly. Combine all partial sections into one
     # coherent outline. We use a light LLM call here ONLY to set the

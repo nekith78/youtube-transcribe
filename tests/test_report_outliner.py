@@ -235,6 +235,56 @@ def test_long_video_chunks_and_uses_multiple_calls():
     assert outline.sections
 
 
+def test_long_video_chunks_run_in_parallel():
+    """v0.10.4: hierarchical path runs per-chunk LLM calls concurrently
+    via thread pool. Sequential 5×100ms = 500ms; parallel = ~100ms."""
+    import threading
+    import time
+
+    long_segs = _long_segments(duration_min=30)
+    for s in long_segs:
+        s.text = s.text * 200    # cross 15k token threshold
+
+    concurrent = 0
+    max_concurrent = 0
+    lock = threading.Lock()
+
+    def slow_call(prompt, **kw):
+        nonlocal concurrent, max_concurrent
+        with lock:
+            concurrent += 1
+            if concurrent > max_concurrent:
+                max_concurrent = concurrent
+        time.sleep(0.1)
+        with lock:
+            concurrent -= 1
+        return _fake_outline_response(sections_count=1)
+
+    with patch(
+        "skills.neurolearn.report.outliner.run_analysis",
+        side_effect=slow_call,
+    ):
+        t0 = time.time()
+        outline = build_outline(
+            segments=long_segs,
+            visual_segments=[],
+            report_type="generic",
+            target_language="en",
+            user_filter="",
+            backend="gemini",
+            api_key="fake",
+        )
+        elapsed = time.time() - t0
+
+    # At least 2 chunks must have been in flight simultaneously.
+    assert max_concurrent >= 2, f"max_concurrent={max_concurrent} (sequential)"
+    # Sections preserved in chunk order.
+    assert outline.sections
+    # Wall time should be well below sequential (Nx100ms).
+    # 30 segments * 200 mult ~> ~6 chunks; sequential = 600ms+, parallel cap=4 → ~200ms.
+    assert elapsed < 0.45, f"elapsed={elapsed:.2f}s (too slow → likely sequential)"
+
+
 def test_split_into_chunks_respects_target_size():
     """Chunker shouldn't produce chunks much bigger than the target."""
     long_segs = _long_segments(duration_min=60)

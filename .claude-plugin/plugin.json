@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "neurolearn",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "Transcribe YouTube / Instagram / TikTok / local-file videos via 8 interchangeable backends (Whisper local, subtitles, Gemini, Groq, OpenAI, Deepgram, AssemblyAI, custom). Research topics, subscribe to channels with RSS, and render structured PDF reports.",
   "author": {
     "name": "Nikita Khan",

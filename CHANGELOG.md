@@ -3,6 +3,91 @@
 All notable changes to neurolearn will be documented here.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.4] — 2026-05-18
+
+### Four targeted speedups (Tier 1 of the performance survey)
+
+A codebase-wide hot-spot survey identified four independent places
+where wall-clock time was being burned on serial work that could
+trivially run in parallel or be cached. All four shipped together;
+each is risk-isolated to its own subsystem.
+
+**1. Whisper-local model cache between batch items.**
+[backends/whisper_local.py:30](skills/neurolearn/backends/whisper_local.py#L30)
+`_load_faster_whisper_model` is now wrapped in `functools.lru_cache(maxsize=4)`,
+keyed on `(name, device, compute_type)`. Previously a `batch` run
+with 10 videos against `--backend whisper-local` reloaded the
+WhisperModel from disk + reinitialised the GPU 10 times — 20-50 s of
+pure model-load overhead. Now the model loads once on first use and
+all subsequent videos in the batch reuse it.
+
+**2. Research multi-language translation runs concurrently.**
+[research/translator.py::build_queries_per_language](skills/neurolearn/research/translator.py)
+`neurolearn research --languages ru,en,ja` previously translated the
+query to each non-anchor language sequentially — 3 LLM calls × ~2 s =
+6 s of latency before any YouTube search started. Now the translations
+fan out across a `ThreadPoolExecutor(max_workers=4)`, so total wall
+time is one LLM round-trip regardless of N (within the 4-worker cap).
+Anchor language detection and the output dict's user-requested order
+are preserved.
+
+**3. Report hierarchical outliner runs chunks in parallel.**
+[report/outliner.py::_build_outline_hierarchical](skills/neurolearn/report/outliner.py)
+For videos that cross the 15 k-token threshold and trigger the
+hierarchical path, per-chunk LLM calls used to run one at a time.
+A 1-hour video that splits into 6 chunks at ~2.5 s/call meant 14-21 s
+of sequential outline work. Now chunk calls fan out (cap 4 workers)
+and rejoin with stable ordering by chunk index. Final assembly call
+stays sequential (depends on all partials).
+
+**4. Resolver probes URLs in parallel.**
+[utils/resolver.py::resolve](skills/neurolearn/utils/resolver.py)
+`neurolearn batch <url1> <url2> ... <urlN>` previously called
+`probe_input(url)` serially — each yt-dlp metadata fetch takes 1-2 s,
+so a 10-URL batch burned 10-20 s before download could start. Probes
+now run in a `ThreadPoolExecutor(max_workers=4)`. Downstream
+processing (dedup via `seen_video_ids`, playlist expansion) stays
+single-threaded so result order is bit-identical to the serial version
+and the dedup set needs no lock.
+
+### Tests
+
++5 new tests assert real parallelism, not just functional equivalence:
+
+- `test_faster_model_load_cached_between_transcribe_calls` —
+  WhisperModel constructor called once for two transcribe calls
+  with the same key tuple.
+- `test_faster_model_cache_separate_for_different_params` —
+  different (device, compute_type) → separate cache entries.
+- `test_build_queries_parallelizes_translations` — concurrency
+  counter proves ≥2 LLM calls in flight simultaneously; wall time
+  bounded.
+- `test_long_video_chunks_run_in_parallel` — same concurrency
+  proof for the outliner.
+- `test_resolve_probes_multiple_urls_in_parallel` — same for probes.
+
+Full suite: 1060 passed, 3 skipped (was 1055 in v0.10.3).
+
+### Trade-offs
+
+- Each parallelization path is capped at 4 concurrent workers to
+  avoid bursting free-tier rate limits on Gemini/OpenAI. Paid-tier
+  users hitting 5-6 RPS are unaffected; users on free-tier may
+  occasionally see one in-flight 429 surface as a fallback to
+  the sequential path (errors do not cascade — each worker handles
+  its own request).
+- Whisper cache holds models in process memory. For long-running
+  daemons this is fine (cap maxsize=4); for one-shot CLI invocations
+  the cache is GC'd at exit.
+
+### Did not change
+
+The Tier 2 / Tier 3 items from the same survey are not in this
+release: yt-dlp `extract_flat` caching, stream-while-download for
+Groq/Deepgram, batch download↔transcribe decoupling, ASR-correction
+batching. They were judged either too narrow (single-flow benefit)
+or too risky for the wall-time win.
+
 ## [0.10.3] — 2026-05-18
 
 ### Gemini accepts YouTube URLs directly (no download)

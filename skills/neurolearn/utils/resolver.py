@@ -2,10 +2,18 @@
 into a flat list of ResolvedTarget. Does NOT download media."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Literal
+
+
+# Probe yt-dlp metadata in parallel for batched URLs. yt-dlp init is
+# ~1-2s per process; on `batch --from-file urls.txt` with 10 URLs that
+# can save 10-20s of sequential probe overhead. Cap conservatively to
+# avoid hitting per-IP rate limits or saturating the network.
+_MAX_PROBE_WORKERS = 4
 
 from skills.neurolearn.utils.downloader import (
     ChannelEntry,
@@ -143,12 +151,29 @@ def resolve(
     failures: list[ResolveFailure] = []
     seen_video_ids: set[str] = set()
 
-    for url, src in raw:
+    # Parallelize the network probes for `raw` URLs. We only parallelize
+    # the I/O-bound metadata fetch; downstream processing (kind dispatch,
+    # dedup, playlist expansion) stays single-threaded so the seen_video_ids
+    # set needs no lock and result ordering is identical to the serial version.
+    def _safe_probe(item: tuple[str, Source]) -> tuple[str, Source, tuple | Exception]:
+        url, src = item
         try:
-            kind, info = probe_input(url)
-        except Exception as e:
-            failures.append(ResolveFailure(url=url, error=str(e), source=src))
+            return url, src, probe_input(url)
+        except Exception as e:    # noqa: BLE001 — re-raised below per-url
+            return url, src, e
+
+    if raw:
+        workers = min(_MAX_PROBE_WORKERS, len(raw))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            probed = list(ex.map(_safe_probe, raw))
+    else:
+        probed = []
+
+    for url, src, result in probed:
+        if isinstance(result, Exception):
+            failures.append(ResolveFailure(url=url, error=str(result), source=src))
             continue
+        kind, info = result
 
         if kind == "local":
             t = _local_to_target(info["path"])

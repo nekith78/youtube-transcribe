@@ -31,6 +31,43 @@ def _channel_entries(*pairs: tuple[str, str]) -> list[ChannelEntry]:
                          channel="@x") for v, t in pairs]
 
 
+def test_resolve_probes_multiple_urls_in_parallel():
+    """v0.10.4: when resolving N inline URLs, probe_input runs concurrently
+    via ThreadPoolExecutor. Sequential 4×100ms = 400ms; parallel ≈ 100ms."""
+    import threading
+    import time
+
+    concurrent = 0
+    max_concurrent = 0
+    lock = threading.Lock()
+
+    def slow_probe(url: str):
+        nonlocal concurrent, max_concurrent
+        with lock:
+            concurrent += 1
+            if concurrent > max_concurrent:
+                max_concurrent = concurrent
+        time.sleep(0.1)
+        with lock:
+            concurrent -= 1
+        # Extract last 3 chars as fake video_id.
+        return _video_info(url[-3:])
+
+    urls = [f"https://youtu.be/v{i:02d}" for i in range(4)]
+    with patch("skills.neurolearn.utils.resolver.probe_input",
+               side_effect=slow_probe):
+        t0 = time.time()
+        targets, failures = resolve(urls, None, ResolverFilters())
+        elapsed = time.time() - t0
+
+    assert failures == []
+    assert len(targets) == 4
+    # At least 2 probes in flight at once.
+    assert max_concurrent >= 2, f"max_concurrent={max_concurrent} (no parallelism)"
+    # Sequential would take 400ms+; allow generous slack for slow CI.
+    assert elapsed < 0.35, f"elapsed={elapsed:.2f}s (looks sequential)"
+
+
 def test_resolve_inline_single_url(tmp_path):
     with patch("skills.neurolearn.utils.resolver.probe_input",
                return_value=_video_info("aaa")):
