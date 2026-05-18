@@ -6,10 +6,9 @@ Universal audio/video transcription — YouTube, Instagram (posts / reels / IGTV
 [![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-plugin-7C3AED.svg)](#install)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg)](https://www.python.org/downloads/)
 
-<!-- Demo GIF: generated with `vhs assets/demo.tape` — see assets/demo.tape -->
-<!-- Once generated, uncomment the line below and commit assets/demo.gif:
 ![neurolearn demo](assets/demo.gif)
--->
+
+<sub>Demo regenerated from [`assets/demo.tape`](assets/demo.tape) via [`vhs`](https://github.com/charmbracelet/vhs). No network calls — runs against the bundled `qa-out/v0101-smoke` batch.</sub>
 
 ---
 
